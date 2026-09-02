@@ -19,7 +19,6 @@ import { invoke } from '@/components/command/invoke';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
 import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
-import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
 import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
 import { PrintStyles } from '@/components/report/PrintStyles';
@@ -86,14 +85,12 @@ export function CommandDeck() {
     /* `relative` so W5's backdrop has a positioned ancestor to fill, and `isolate` so its
        negative z-index cannot escape behind this page's own container and vanish. */
     <div className="br-page relative isolate mx-auto max-w-[1400px] p-5">
-      {/* W5 · SIGNATURE MOVED TO THE SHELL, 2026-08-15, and the mount that used to be here is gone.
-          `AppLayout` now carries one backdrop for all 77 routes under it. Two of them do not stack —
-          they SEAM: the page-scoped copy is opaque and spans only this 1400 px container, so the two
-          falloffs disagree at its edge and a visibly darker rectangle appears with a hard line down
-          the left of the content area. `SignatureBackdrop` refuses a second mount structurally
-          (first-claim-wins), so this was already inert; removing it deletes the dead code rather
-          than the behaviour. The linear-light argument for the plate is unchanged and now lives in
-          the component. */}
+      {/* W5 · THE SIGNATURE BACKDROP IS GONE. It moved from this page to the shell on 2026-08-15
+          (two mounts seamed at this container's edge), and the shell's copy was removed on
+          2026-09-02 under INSTRUMENT_100X_PLAN S5: it drew nothing in the default theme and an
+          empty plate in dark, on 77 routes — see docs/instrument/LEDGER.md §5 for the measured
+          reasons. `relative isolate` above stays: it is what keeps this page's own negative
+          z-index layers (E1/E5 when open) inside the page. */}
       <PrintStyles />
       <PageTitle
         icon={<Command size={20} />}
@@ -147,51 +144,11 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
         <Stat label="Risks" value={o.counts.risks} tone={o.topRisks.some((r) => r.impact === 'Critical') ? 'bad' : undefined} />
       </div>
 
-      {/*
-        E1 THE THEATRE, LIVE — and opt-in, which §7 requires rather than permits.
-
-        The headlines below are strings this page ALREADY formats and already shows: the gating fraction from the
-        progress bar, the workstream count from the Stat row, the partner count from the panel's own title, the
-        risk count from the Stat row. Nothing here computes a new number, and a measure the page does not have
-        arrives as `null` and renders as a named absence rather than a zero.
-
-        That is not fussiness about this one component. E1's harness rendered E0's frame time as a number
-        belonging to a different programme, under a printed claim that every row was checkable — so of the nine
-        environments, this is the one with a false-number-on-a-lit-panel already on its record.
-      */}
-      <DeckRelief
-        heightPx={460}
-        panels={[
-          {
-            id: 'gating',
-            title: 'Launch readiness — gating chain',
-            /* The page shows this as a fraction beside a bar. A gating chain with no gates has no fraction, and
-               0/0 would read as "nothing done" rather than as "nothing to do". */
-            headline: o.launch.gatingTotal > 0 ? `${o.launch.gatingDone}/${o.launch.gatingTotal} gates` : null,
-            note: o.launch.gatingTotal > 0 ? null : 'No gating chain recorded for this launch',
-          },
-          {
-            id: 'workstreams',
-            title: 'Workstreams',
-            headline: `${o.counts.workstreams} workstreams`,
-            note: `${o.counts.tasks} tasks across them`,
-          },
-          {
-            id: 'partners',
-            title: 'Partner pipeline',
-            headline: `${o.counts.partners} partners`,
-            note: o.partnersByType.length > 0 ? `${o.partnersByType.length} types` : null,
-          },
-          {
-            id: 'risks',
-            title: 'Risk heatmap',
-            headline: `${o.counts.risks} risks`,
-            /* Named only when one exists. "0 critical" and "none recorded" are different statements and this
-               page cannot tell them apart, so it says the one it can support. */
-            note: o.topRisks.some((r) => r.impact === 'Critical') ? 'Critical risks present' : null,
-          },
-        ]}
-      >
+      {/* E1 THE THEATRE — RETIRED 2026-09-02 (INSTRUMENT_100X_PLAN S5, §3.1). The GL room that wrapped
+          this deck carried depth ORDER only — the sequence the flat deck below already carries as a list —
+          and FINAL_SCORECARD §4 measured no data mark above the chroma floor in either theme and a light
+          render flattened to 42%. The reading always lived in DOM (§6 rule 4); the room is gone and the
+          reading is unchanged. docs/3d/e1/README.md carries the decision. */}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Launch readiness */}
         <Panel icon={<Rocket size={13} />} title="Launch readiness — gating chain">
@@ -274,7 +231,6 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
           </div>
         </Panel>
       </div>
-      </DeckRelief>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Launch Monte Carlo (Wave 2) */}

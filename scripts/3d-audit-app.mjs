@@ -4,7 +4,7 @@
  * ── THE GAP THIS CLOSES ──────────────────────────────────────────────────────────────
  * `scripts/3d-audit.mjs` sweeps reduced motion, print, no-WebGL, a lost context and the quality ladder over
  * every `docs/3d/eN/live.html`. Every one of those checks runs against a STATIC HARNESS PAGE. None of it runs
- * against `apps/web`, which is where the eight relief surfaces actually ship — so the programme's audit has
+ * against `apps/web`, which is where the relief surfaces actually ship (eight until S5 retired E1) — so the programme's audit has
  * always been an audit of the laboratory.
  *
  * That gap has already cost two concrete things:
@@ -1024,13 +1024,8 @@ const SURFACES = [
     nudge: async (page) => { await page.selectOption('select', 'projects'); },
     note: 'one stubbed audit page; a filter change held in reserve for when the first read is dispatched dead',
   },
-  {
-    id: 'E1', name: 'DeckRelief', file: 'src/components/geometry/DeckRelief.tsx',
-    glFile: 'src/components/geometry/DeckReliefGl.tsx',
-    route: '/command-deck', page: 'src/pages/CommandDeck.tsx',
-    seat: true, toggle: /theatre view/i, stubs: COMMAND_STUBS, printSheet: true,
-    note: 'six stubbed command endpoints; the page mounts the house print sheet',
-  },
+  /* E1 DeckRelief was a row here until S5 of INSTRUMENT_100X_PLAN retired it (2026-09-02): the deck's reading
+     lives in DOM and the GL room carried depth order only — FINAL_SCORECARD §4's own dichotomy, decided. */
   {
     id: 'E5', name: 'SurfaceRelief', file: 'src/components/geometry/SurfaceRelief.tsx',
     glFile: 'src/components/geometry/SurfaceReliefGl.tsx',
@@ -1727,6 +1722,31 @@ async function reach(page, surface) {
   }
 
   /*
+   * S5 OF INSTRUMENT_100X_PLAN (2026-09-02): SIX RELIEFS DEFAULT ON since cafb955 (2026-08-21), and this sweep
+   * last ran on 2026-08-14. A click on a toggle that is ALREADY pressed turns the relief OFF, and the wait for
+   * `aria-pressed="true"` below then times out — the sweep reported TOGGLE_DID_NOT_ENGAGE on all six kept
+   * surfaces in both themes: a stale instrument, not six broken surfaces. So if the toggle is pressed before
+   * we touch it, turn it OFF first and wait for the flip, so that `preClick` and `flatBefore` are taken with
+   * the relief genuinely off and the click below is the one that ENGAGES it. Every axis keeps its meaning;
+   * the row carries `defaultOn` so a reader knows which path was walked.
+   */
+  let defaultOn = false;
+  if (await btn.first().getAttribute('aria-pressed') === 'true') {
+    defaultOn = true;
+    await btn.first().scrollIntoViewIfNeeded();
+    await btn.first().click();
+    try {
+      await page.waitForFunction(
+        (sel) => Array.from(document.querySelectorAll('button'))
+          .some((b) => sel.test(b.textContent ?? '') && b.getAttribute('aria-pressed') === 'false'),
+        new RegExp(surface.toggle.source, surface.toggle.flags),
+        { timeout: 10_000 },
+      );
+    } catch { return { state: 'TOGGLE_STUCK_ON', preClick: null, flatBefore: null, nudged, defaultOn }; }
+    await page.waitForTimeout(500);
+  }
+
+  /*
    * BOTH BASELINES ARE TAKEN HERE, BEFORE THE CLICK, and each is what makes one axis attributable:
    *
    *   · `preClick` is how many GL contexts the route had already built on its own. The contexts created from
@@ -1755,11 +1775,11 @@ async function reach(page, surface) {
       new RegExp(surface.toggle.source, surface.toggle.flags),
       { timeout: 10_000 },
     );
-  } catch { return { state: 'TOGGLE_DID_NOT_ENGAGE', preClick, flatBefore, nudged }; }
+  } catch { return { state: 'TOGGLE_DID_NOT_ENGAGE', preClick, flatBefore, nudged, defaultOn }; }
 
-  if (await waitForDrawn(page, 60_000)) return { state: 'DRAWN', preClick, flatBefore, nudged };
+  if (await waitForDrawn(page, 60_000)) return { state: 'DRAWN', preClick, flatBefore, nudged, defaultOn };
   const alert = await reasonBeside(page);
-  return { state: alert ? 'RENDERER_REFUSED' : 'NEVER_DREW', detail: alert, preClick, flatBefore, nudged };
+  return { state: alert ? 'RENDERER_REFUSED' : 'NEVER_DREW', detail: alert, preClick, flatBefore, nudged, defaultOn };
 }
 
 /**
@@ -1990,7 +2010,7 @@ async function sweep(browser, surface, open) {
          */
         row.problems.push(`${surface.glFile} never sets \`canvas.dataset.qualityTier\`, so the tier this `
           + 'surface rendered at cannot be read back off the live page. `shared/useQualityTier.ts:94-99` '
-          + 'states that the components stamp it, and six of the eight do — DeckReliefGl.tsx:608, '
+          + 'states that the components stamp it, and five of the seven do — '
           + 'SurfaceReliefGl.tsx:336, OntologyOrreryGl.tsx:516, PipelineReliefGl.tsx:535, '
           + 'VaultReliefGl.tsx:522, StormReliefGl.tsx:559. `env/quality.ts` is the reason it matters: a tier '
           + 'that cannot be reported cannot be trusted');
@@ -3919,10 +3939,10 @@ the reader the object went away — and nothing needs to, because it carries no 
 
 ## Axis 4 · The GL context count, measured rather than derived
 
-\`apps/web/src/components/__tests__/glContextBudget.test.ts\` pins the worst route at **3 live contexts** by
-walking the static and dynamic import graph from all 78 routes, and names \`pages/CommandDeck.tsx\` as the route
-at the cap: the shared 2-D context behind the deck, plus \`DeckReliefGl\`, plus \`SurfaceReliefGl\`, the last two
-independent opt-ins with no coordination between them. Counting real contexts in a real browser answers a
+\`apps/web/src/components/__tests__/glContextBudget.test.ts\` pins the cap at **1 live context** per route by
+walking the static and dynamic import graph from all 78 routes, and pins the COUNT of routes at that cap (since
+S5 of INSTRUMENT_100X_PLAN removed the shell's backdrop and retired E1, no route reaches two: the six relief
+routes and the flat-chart routes each hold exactly one). Counting real contexts in a real browser answers a
 question the import graph can only bound, and this is the one place the two can be compared.
 
 | surface | route | contexts created | not lost | canvas in the document | offscreen | created by this toggle | \`getContext\` calls | not lost after the toggle goes OFF |
@@ -3977,10 +3997,10 @@ ${(() => {
     + `rather than a rounding**: the import graph bounds what a route CAN hold and the browser counts what `
     + `it DID hold, so a measured ${worst.notLost} under a pin of ${pin} means a context the graph expects was not `
     + 'built on this run — a lower measurement than the bound is not a contradiction. The likely reason on '
-    + 'this route is the theme: the four axes run under the app\'s default, and `SignatureBackdrop` — the '
-    + 'shell\'s only caller of `sharedRenderer()` — returns early unless `<html>` carries `dark`, so the '
-    + 'shared 2-D context the pin counts does not exist in light. That is read off the source, not measured '
-    + 'here, and the pin is not wrong: it counts a configuration this sweep does not load.';
+    + 'this route is that the shared 2-D context is only built when a flat chart on the page actually draws '
+    + '(since S5 of INSTRUMENT_100X_PLAN the shell mounts no backdrop, so no context exists for a route until '
+    + 'one of its own charts calls `sharedRenderer()`). That is read off the source, not measured here, and '
+    + 'the pin is not wrong: it bounds what the route CAN hold.';
 })()}
 `}
 The offscreen column is the shared 2-D renderer: its canvas is never in the document, which is how it is told

@@ -35,6 +35,7 @@
  * refusal named to the reader rather than swallowed.
  */
 import { lazy, Suspense, useCallback, useId, useState } from 'react';
+import { ReliefWatchLine } from '@/components/shared/ReliefWatchLine';
 import { SurfacePlot, type SurfacePlotProps } from '@/components/geometry/SurfacePlot';
 import { useReliefPreference } from '@/lib/reliefPreference';
 
@@ -345,6 +346,8 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
             Relief unavailable — <code>{refusal}</code>. The measurements above are unaffected.
           </span>
         )}
+        {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
+        <ReliefWatchLine />
       </div>
     </div>
   );

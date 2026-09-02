@@ -7,9 +7,13 @@ import { PrintStyles } from '@/components/report/PrintStyles';
 /**
  * WHAT A PLAIN ⌘P PUTS BEHIND A BOARD PACK AND A COMPLIANCE RECORD.
  *
- * `AppLayout.tsx:265` mounts `SignatureBackdrop` on every shell route: an `absolute inset-0 -z-10`
- * canvas spanning the whole shell, painted from whichever palette the theme had. All thirteen
- * printable artefacts in this app are shell routes, so it is behind every one of them. The house
+ * HISTORY, KEPT BECAUSE THE RULE IT PRODUCED STAYS: until S5 of INSTRUMENT_100X_PLAN (2026-09-02)
+ * `AppLayout` mounted `SignatureBackdrop` on every shell route: an `absolute inset-0 -z-10`
+ * canvas spanning the whole shell, painted from whichever palette the theme had. That layer is
+ * removed (it drew nothing in light and an empty plate in dark — docs/instrument/LEDGER.md §5),
+ * but the boundary this file tests is not about that one canvas: any canvas outside the printed
+ * document is chrome and must not print, whoever adds the next one. All thirteen
+ * printable artefacts in this app are shell routes, so the backdrop was behind every one of them. The house
  * print sheet hid seven things and the backdrop matched none of them — every one of the seven
  * names a tag, a role or a class, and this is an unclassed `<canvas>` inside an unclassed `<div>`.
  * Forcing the paper white does not reach a bitmap, re-pinning the dark tokens does not reach a
@@ -74,9 +78,9 @@ function whatPrintDoesTo(el: Element, rules: readonly CSSStyleRule[]) {
  * THE REAL SHELL'S SHAPE, and every structural fact below is quoted from a file.
  *
  * `AppLayout.tsx:264` — `<div className="relative isolate flex h-screen flex-col bg-page text-navy">`
- * `AppLayout.tsx:265` — `<SignatureBackdrop />`, which renders
- *   `<div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"><canvas/></div>`
- *   (`SignatureBackdrop.tsx:449-455`)
+ * (until S5) `AppLayout.tsx:265` — `<SignatureBackdrop />`, which rendered
+ *   `<div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"><canvas/></div>`;
+ *   the fixture below keeps that shape as the canonical "unclassed canvas outside main" probe
  * `AppLayout.tsx:302` — `<MainContent>`, which renders `<main id="main-content">` (`MainContent.tsx:5`)
  * and every routed printable page (`router.tsx:254-311`) renders inside that `<main>`.
  *

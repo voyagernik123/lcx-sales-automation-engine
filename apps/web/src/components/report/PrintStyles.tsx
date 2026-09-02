@@ -41,12 +41,12 @@
  * All seven relief wrappers SWAPPED rather than layered, so with a relief open the flat
  * figure was not in the document at all, and no `@media print` rule anywhere in `apps/web`
  * put it back — this file had zero occurrences of `canvas`. Three surfaces actually reach
- * paper, and all three mount this sheet: `DeckRelief`, `SurfaceRelief` (via
- * `CockpitPanels`) on `CommandDeck`, and `StormRelief` on `MarketingCrisis` — which is a
+ * paper, and all mount this sheet: `SurfaceRelief` (via `CockpitPanels`) on `CommandDeck`, and
+ * `StormRelief` on `MarketingCrisis` (`DeckRelief` too, until S5 retired it) — which is a
  * COMPLIANCE RECORD somebody keeps. A canvas printed where the risk figures should be is
  * the serious one of the three.
  *
- * THE WHOLE LIVE BLOCK GOES, NOT JUST ITS CANVAS. `DeckReliefGl` projects real DOM text
+ * THE WHOLE LIVE BLOCK GOES, NOT JUST ITS CANVAS. `DeckReliefGl` (retired) projected real DOM text
  * over its canvas — panel titles, headlines, and a HUD on an `rgba(4,6,11,.82)` plate.
  * Hiding only the canvas would print that text onto white paper with its dark plate
  * removed, floating over the flat deck it is a copy of. Hiding a canvas and printing
@@ -64,9 +64,12 @@
  * so far has been in — neither attribute exists and neither rule matches anything.
  *
  * ── `canvas:not(main canvas)`: A PLAIN ⌘P IN THE DARK THEME PRINTED A BLACK GROUND ────
- * `AppLayout.tsx:265` mounts `SignatureBackdrop` on EVERY shell route — an `absolute inset-0
- * -z-10` canvas that spans the whole shell. Every printable artefact in this app is a shell
- * route, so it sits behind all thirteen of them. It matched NONE of the chrome selectors below,
+ * Until S5 of INSTRUMENT_100X_PLAN (2026-09-02) `AppLayout` mounted `SignatureBackdrop` on EVERY
+ * shell route — an `absolute inset-0 -z-10` canvas that spanned the whole shell. That layer is
+ * GONE (it drew nothing in light and an empty plate in dark; see the ledger), but the rule stays
+ * as the guard it always was: any canvas outside `main` is chrome, not artefact. The history that
+ * derived it: every printable artefact is a shell route, so the backdrop sat behind all thirteen
+ * of them, and it matched NONE of the chrome selectors below,
  * because all of them name a tag, a role or a class and it is an unclassed `<canvas>` inside an
  * unclassed `<div>`. The rules above force the PAPER white and re-pin the dark TOKENS, and
  * neither reaches a bitmap: the canvas was already painted from the dark palette, nothing in the

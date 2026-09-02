@@ -1,4 +1,4 @@
-# E1 · THE THEATRE — status: **THE HYBRID WORKS. §7(b) is now a real tension, not a gap.**
+# E1 · THE THEATRE — status: **RETIRED 2026-09-02 (INSTRUMENT_100X_PLAN S5, §3.1): the reading lives in DOM; the GL room carried depth order only, which the flat deck already carries. FINAL_SCORECARD §4 measured no data mark above the chroma floor in either theme and WORSE in light. `DeckReliefGl.tsx` removed from apps/web; this harness stays as the record.**
 
 `live.png` is the gate. `no-dof.png` is not a control any more — read on.
 

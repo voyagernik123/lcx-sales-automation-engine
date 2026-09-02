@@ -46,6 +46,7 @@
  * the reader rather than swallowed.
  */
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { ReliefWatchLine } from '@/components/shared/ReliefWatchLine';
 import type { OrreryReading } from '@/components/geometry/OntologyOrreryGl';
 import type { OrreryCouplingInput, OrreryEntityInput, FlatNodeCentre } from '@/components/geometry/orrery/orreryLayout';
 import { useReliefPreference } from '@/lib/reliefPreference';
@@ -204,6 +205,8 @@ export function OntologyOrrery({
           <span className="text-grey-dark">
             {showOrrery ? 'Radius = hops · size = couplings · plane = kind' : `${entities.length}N ${couplings.length}E`}
           </span>
+          {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
+          <ReliefWatchLine />
         </div>
 
         {refusal !== null ? (

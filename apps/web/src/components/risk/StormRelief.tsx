@@ -81,6 +81,7 @@
  * over-claims by one clause is worse than a table.
  */
 import { lazy, Suspense, useCallback, useId, useMemo, useState } from 'react';
+import { ReliefWatchLine } from '@/components/shared/ReliefWatchLine';
 import { RiskCalendar, type RiskCalendarProps } from './RiskCalendar';
 import {
   RISK_READING_TEXT, isRiskField,
@@ -486,6 +487,8 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
             produced nowhere yet, and an empty storm shown by default would present an absence as a reading.
           </span>
         )}
+        {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
+        <ReliefWatchLine />
       </div>
 
       {/*

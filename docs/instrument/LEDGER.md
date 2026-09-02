@@ -60,20 +60,24 @@
 | S1 ONE CLOCK | DONE · LIVE | 6e0e939 | `docs/instrument/audit/after-s1/BASELINE.md` | rAF loops at rest **76 → 0** · live intervals **8 → 2 under vite dev = 1 heartbeat + the HMR ping (`@vite/client:620`), so 1 in production** · timer call sites 25 → 13 · fake Dashboard feed removed · ratchet `oneClock.test.ts` |
 | S2 ONE MATERIAL | DONE · LIVE (gate #3 clean, 6,660 tests) | 180c939 | `docs/instrument/audit/after-s2/BASELINE.md` | seam on every twin pair **0.00** both themes (was 2.78 / 3.09 / 3.13); `theme.ts` gained the `page` radiance role after the first derivation (page ← ground) was refused by measurement; scenery block in tokens.css GENERATED (`npm run gen:tokens -w apps/web`), index.html pre-hydration colours generated; ratchet `oneMaterial.test.ts`; 8 contrast/corridor records re-recorded with reasons (all moves ≤ 1 level, two improvements) |
 | S3 ONE CAMERA | DONE · **LIVE both surfaces** (Pages needles probe 3; Render deployment 6209660953 `success`) | 6a2c04b | `docs/instrument/audit/after-s3/BASELINE.md` | routes attempting a view transition on a REAL client navigation **0 → 76 of 79** (the 3 at zero — /lcxos /portal /select — have `linkCount 0`: no in-app link, so "not navigated", not "cut"); continuity call sites 0 → 3; rAF at rest still 0; intervals still heartbeat + `@vite/client` only; WebKit visible run `ready` 212 ms / `finished` 452 ms; ratchet `oneCamera.test.ts`; the instrument caught the `viewTransition: undefined` clobber |
-| S4 THE WATCH | **IN PROGRESS** (drafts in scratchpad `s4/`: watch.shared.ts, watch.api.ts, routes-watch.ts, useArrival.ts (zustand store — ONE arrival, three readers), WatchStrip.tsx, oneWatch.test.ts) | — | — | build per "S4 BUILD SPEC" below; ambient 49 is the number to move |
-| S5 FLOORS ARE DATA | not started | — | — | |
+| S4 THE WATCH | DONE · **LIVE both surfaces** (Pages probe 3: JS has `stated prior` + `/v1/watch?since=`, CSS FREE of `pulse-beacon`; Render deployment 6210174494 `success`) | 37fa9f6 | `docs/instrument/audit/after-s4/BASELINE.md` | ambient **49 → 28** (beacon 10 → 0, pulse 13 → 2 in LoadingSkeleton; spin/slide-in unchanged by design); routes with CSS motion at rest **77 → 1** (/ontology = React Flow animated edges → S5); `GET /v1/watch?since=` entitlement-first, stated prior, `absent[]`; ONE arrival store, three readers; feel wired in `invoke.ts`; initial JS 813 → 820/850; ratchets `oneWatch.test.ts` + api `watch.test.ts`; `/v1/watch` declared in the compartment register |
+| S5 FLOORS ARE DATA | **IN PROGRESS** | — | — | per "S5 BUILD SPEC" below — X1 REMOVE first (its own header is the proof), E1 retire, bind E2–E6, the join (three unions + two maps + drift test), ratchet `oneFloor.test.ts` |
 | S6 THE TERMINAL | not started | — | — | |
 | S7 THE OBJECT | not started | — | — | |
 
-**NEXT ACTION (S4 close-out, 2026-09-02):** S4 is built, gate #3 clean (five totals), files STAGED. Steps, in
-order: (1) after-s4 capture finishes → `/tmp/instrument-after-s4.log` ends `exit=0`; (2) `node
-scratchpad/s4-numbers.mjs` prints after-s3 → after-s4 deltas; (3) fill `<AMB>/<BREAKDOWN>/<REST>/<FEEL>` in
-`scratchpad/s4-commit-msg.txt` (add "initial JS 813 → 820 / 850 KB"); (4) `git add docs/instrument/audit/after-s4
-docs/instrument/LEDGER.md && git commit -F …` from the REPO ROOT; (5) `git push lcx-sales dev:main`; (6) `bash
-scratchpad/verify-live.sh <sha> --js 'stated prior' --js '/v1/watch?since=' --css-absent 'pulse-beacon'` (a
-deletion is live only when the bytes are GONE); (7) flip S4 → DONE · LIVE with the sha, S5 → IN PROGRESS, promote
-the S5 BUILD SPEC below from DRAFT; update memory `instrument-100x-plan.md`. THEN S5, starting with X1's removal
-(its own header is the proof) — never concurrent with a gate or a capture.
+**NEXT ACTION (S5 close-out, 2026-09-02):** S5 is BUILT in tree (X1 removed, E1 retired, the join, the
+captions; every relief/inspector/ratchet suite green; gate #1's two catches fixed). Steps, in order, never
+concurrent: (1) after-s5 capture DONE (77 → 2 GL; hex regression fixed → the report is RE-CAPTURED at step 3b);
+(2) **gate #3** from the ROOT → `/tmp/gate-s5.log` (0 npm errors, FIVE totals; #1 and #2 each caught one real
+AiProse rule); (3) app sweep `APP_SWEEP_OUT_DIR=/Users/nik/Downloads/
+usclaude-main/docs/instrument/audit/after-s5/app-sweep node scripts/3d-audit-app.mjs` (port 5188; E1 already
+dropped from its roster); (4) `node scratchpad/s5-numbers.mjs` → fill `<GL>/<REST>/<JS>/<CHUNKS>/<SWEEP>/<GATE>`
+in `scratchpad/s5-commit-msg.txt`; (5) `git add -A` the S5 files (deletions included) + after-s5 + LEDGER, commit
+from the ROOT, `git push lcx-sales dev:main`; (6) `bash scratchpad/verify-live.sh <sha> --js 'do not hold' --js
+'Open holdings desk' --js-absent 'import("./shared-'` (NOT "Theatre view" — that label lived in a lazy chunk the
+script never fetches; see §5 "LIVE-CHECK DESIGN"), then compare the entry chunk's bytes to today's 427,034; (7)
+flip S5 → DONE · LIVE, S6 → IN PROGRESS, promote the S6
+spec from DRAFT, update memory. THEN S6 per its spec — fixture mode in the instrument FIRST (an honest before).
 
 ### S4 BUILD SPEC (grounded 2026-09-01; execute after S3 commits)
 **Sources, all already held (cite):** `audit_log(actor, action, entity, entity_id, meta, created_at)` — 13 write
@@ -121,7 +125,7 @@ gps-less operator sees no gps items); ranking prior is one exported constant wit
 **Measure after:** S0 runtime `routesWithMotionAtRest` 77 → 0 (except in-flight spinners); static ambient 49 → ≤ 24
 (spins) ; feel files 5 → (invoke.ts + strip).
 
-### S5 BUILD SPEC (grounded 2026-09-02 while S4's gate ran; execute after S4 commits — DRAFT until S4 is DONE)
+### S5 BUILD SPEC (grounded 2026-09-02; IN FORCE from S4's commit 37fa9f6)
 
 **The test, per environment (plan §3.1):** does the third dimension carry information the flat version
 loses, measured — S0's chroma-above-floor in BOTH themes plus the environment's own README claim. An
@@ -207,7 +211,77 @@ nothing enforced it); every `RELATED_RESOLVERS` key has a web payload.
 **Budgets:** GL stays lazy (15 chunks, 0 eager after X1 goes — actually −3.9 KB eager); initial JS ≤ 820 KB
 (S5 adds no eager bytes; payloads are lazy with the drawer).
 
+### S6 BUILD SPEC (grounded 2026-09-02 while S5's gate ran; DRAFT until S5 is DONE)
+
+**The claim under test (plan §S6):** REACH and COMPRESSION — a screen holds three times the figures, every
+figure is live and dated, and every figure is one keystroke away. Kill tests CERTAINTY (a figure carries
+its own date and delta) and COMPRESSION (figures per viewport ×3 on the eight desks, zero contrast
+regressions — `contrast.test.ts` is the judge).
+
+**The eight desks (from `WORKSPACES[].defaultLanding`, not remembered):** `/command-deck` (command),
+`/bd-pipeline` (sales), `/command` (intel), `/regulatory-dashboard` (regulatory), `/distribution`,
+`/marketing`, `/gps`, `/wbr` (governance).
+
+**1 · `<Fig>` — one figure system (`components/fig/Fig.tsx`, ~2 KB).** Props: `value` (number | null),
+`format` (money | int | pct | ratio | duration), `label`, `source: { at: ISO | null; kind: 'record' |
+'derived' | 'estimate' }`, `mark?: { value: number; at: ISO }` (the last mark), `state?: StatusRole`,
+`address?: string` (the ⌘K noun/verb that reaches it). Renders IBM Plex Mono `tabular-nums` (`num-tabular`
+is already on 69 files — Fig makes it the one place), the value, then on ONE line beneath: the delta since
+the mark (▲▼ + when, formatted from S1's clock: "▲ 12% · 3 h"), the age of the source instant coloured by
+staleness (fresh / aging / stale thresholds per format kind, state tokens only), and the key address as a
+kbd chip. **Refuses:** `source.at === null` renders the value UNDATED with a visible "undated" mark and no
+delta — the −10 confidence rule made visible, never hidden; `value === null` renders the named absence
+("—", with the label) and never a zero.
+
+**2 · The mark.** `useLastSeen(surface)` keeps per-surface marks for hints; S6 adds `lib/figMarks.ts`
+(scoped key `fig-marks:v1`, per operator): `{ [figId]: { value, at } }`, written on ARRIVAL (S4's store —
+one write per arrival, not per render), read by every Fig. Delta = value − mark.value, when = mark.at.
+First arrival: no mark → "first reading" instead of a delta. Under S1: `useClock(1000)` drives the age
+text; no private timer.
+
+**3 · The address.** `components/command/gpsGrammar.ts` is the model (nouns → destinations). S6 adds a
+`figAddress(figId)` registry: each desk figure declares the ⌘K phrase and `g`-chord that lands on it
+(existing grammar entries where they exist; a FIG_ADDRESSES table otherwise), and `<Fig>` shows it. The
+palette gains "go to figure" over that table (one entry per figure, deduplicated with existing nouns —
+`searchNoun.test` guards the collision).
+
+**4 · The terminal grid on the eight desks.** Replace `StatCard` (7 sites: MetricStatCards, WinLoss,
+Dashboard, KpiDashboard, BoardReport) with `<Fig>` rows on a dense grid: no cards inside cards; `text-micro`
+(11 px) becomes the ONLY small size (the tailwind scale's smaller sizes are removed and a ratchet forbids
+`text-[10px]`/`text-[9px]` literals outside the strip/ticker chrome that already uses 10 px — decide: keep
+10 px for TopNav chrome only, listed); `PageTitle` and `SectionLabel` the only headings (ratchet: no `<h2>`/
+`<h3>` with ad-hoc classes on the eight desks). Contrast is unchanged by construction (tokens only) and the
+ratchet proves it.
+
+**5 · MEASUREMENT — decided before building.** The S0 instrument aborts `**/v1/**`, so today's "figures in
+first viewport" on the desks is the empty-state sentence's number (median 1). S6 adds a FIXTURE MODE to
+`scripts/instrument-audit.mjs` (`INSTRUMENT_FIXTURES=1`): per-desk canned responses for the endpoints each
+landing reads (borrowed from `scripts/3d-audit-app.mjs` § FIXTURES, which already mirrors `lib/api/*`
+shapes; extended for the eight landings), deterministic under the frozen clock. Baseline is re-taken WITH
+fixtures BEFORE the re-layout (an honest "before"), then after. Target ×3 on each desk; the report prints
+both numbers per desk and the median. Density that comes from fixtures is a property of the layout, not of
+the data — stated in the report header.
+
+**Per-desk endpoints the fixture mode must answer (read from the pages 2026-09-02, not remembered):**
+`/command-deck` CommandDeck.tsx → fetchCommandOverview, fetchCommandDecisions, fetchCommandFinancials,
+fetchCommandPartners, fetchCommandRisks, fetchCommandTasks, fetchLaunchSim · `/bd-pipeline` BdPipeline.tsx →
+fetchBdPipeline, fetchHandoffs, fetchLeadRowsByIds, fetchTasks · `/command` CommandCenter.tsx → fetchForecast,
+fetchPortfolio, fetchSlos · `/regulatory-dashboard` Dashboard.tsx → NO fetchers (compiled state data) ·
+`/distribution` DistributionCockpit.tsx → fetchDistCampaigns, fetchDistributionDeep, fetchPresence ·
+`/marketing` Marketing.tsx (58 lines) → NO fetchers (a landing) · `/gps` Gps.tsx → fetchGpsClients,
+fetchGpsEngagements, fetchGpsSummary · `/wbr` Wbr.tsx → fetchWbr. `scripts/3d-audit-app.mjs` already stubs the
+command set (COMMAND_STUBS) and bd leads — reuse those payloads.
+
+**Ratchet `oneTerminal.test.ts`:** no `num-tabular` + digit rendering outside `<Fig>` on the eight desks
+(grep-provable by page closure); every `<Fig>` on a desk declares `source`; no `text-[N px]` literal below
+11 px outside the listed chrome; the eight desks have no `StatCard`.
+
+**Budgets:** `<Fig>` ~2 KB eager (shell chunk) — initial JS must stay ≤ 850 (was 820 after S4; S5's X1
+removal recovers ~3.9 KB); fonts unchanged (Plex Mono is already loaded — NO third preloaded font).
+
 ## 3 · THE STANDING RULES OF THIS BUILD — the quality bar, made mechanical
+- **zsh trap (bit 2026-09-02):** `path` is zsh's PATH array — a loop variable named `path` empties PATH for the rest
+  of the command ("command not found: head"). Never name a shell variable `path`; each Bash call is a fresh shell.
 
 1. **Measured before claimed.** A system merges only with its S0 before/after in the commit body.
 2. **Gate, then grep.** `npm run ci-check > log; grep -c 'npm error' log` must print 0. `| tail` masks exits.
@@ -320,6 +394,147 @@ nothing enforced it); every `RELATED_RESOLVERS` key has a web payload.
   routes with CSS motion at rest **77 → 1** — /ontology ×3 = React Flow `animated: true` edges
   (OntologyExplorer.tsx:153), the graph's direction marks → S5 decides with the orrery; feel files 5 → 6
   (invoke.ts, the seam); vt 76, rAF 0, intervals 2, GL 77, errors 0. Committing S4 with this body.
+- 2026-09-02 · **S5 · X1 REMOVED.** `SignatureBackdrop.tsx` (638 lines), its AppLayout mount, and
+  `ambientBackdrop.test.tsx` deleted. THE DERIVED FACTS THAT TEST PINNED, kept here so nobody re-derives them
+  (one rounding convention: a LEVEL is round(255·linearToSrgb(L))): through the shipped tone map + encode,
+  dark `--page-bg` #090e1b → 9 14 27 (plate to the byte; vignette darkest 3 5 13) but light #f4f6fb →
+  **213 214 217 at ZERO vignette amplitude** (31/32/34 levels lost; darkest 149 150 153 at 0.62) — so five
+  certified roles fall under 4.5:1 (`--chart-4` 4.574 → 3.403, `--green` 4.932 → 3.669, `--amber` 5.224 →
+  3.887, `--grey` 5.671 → 4.219, `--indigo` 5.815 → 4.326) and "ship it flat" is the same defect. The light
+  DOWN corridor is TWO numbers: 10 levels against the ratchet's text roles, 2 levels against every token
+  darker than the canvas (`--chart-4` at 4.574:1). Negative vignette depth brightens only the EDGES (centre
+  meets the curve unmultiplied) so no shipped uniform yields a light backdrop. A subtractive plate can only
+  RAISE dark-theme contrast (every pixel ≤ page luminance). Verdict under plan §3.1: a layer that draws
+  nothing on the default theme and an empty plate on the other carries no information; removed.
+- 2026-09-02 · X1 follow-through: web tsc clean; `glContextBudget.test` shell assertion INVERTED with the reason
+  in its message (the shell must reach NO `sharedRenderer()` caller; routes at zero must exist again);
+  `printStylesAmbientCanvas` header, `PrintStyles.tsx`, `CommandDeck.tsx` comments, `lane-closure.mjs` lane and
+  `3d-audit-app.mjs` prose rewritten. THE CENSUS THEN WENT RED CORRECTLY: `/command-deck` = **2** contexts (E1 +
+  E5; its charts are SVG, so the shared context on that page came only from the shell) against the pin of 3.
+  The pin moves ONCE, after E1's retirement (next), not twice.
+- 2026-09-02 · **STANDBY CHECKPOINT (owner's usage limit; resume 2.5 h later). TREE IS DIRTY AND UNCOMMITTED —
+  do NOT gate or commit until the list below is clear; do NOT run git reset/checkout/stash.** DONE in tree:
+  X1 removed (+ its 6 references), E1 files `git rm`'d (`DeckRelief.tsx`, `DeckReliefGl.tsx`, `deckSlots.ts`,
+  `geometry/__tests__/deckRelief.test.tsx`), CommandDeck unwrapped (DOM deck kept; retirement comment),
+  `docs/3d/e1/README.md` first line = RETIRED verdict, `reliefFallback`/`reliefAccessibility`/`useQualityTier`
+  (list 8 → 7)/`glContextBudget` (owners ≥ 8; shell assertion inverted) partly fixed, `reliefPrintPath` guard
+  re-pointed E1 → E5 (counts `svg`; VERIFY the default state counts exactly 1 svg — if not, count the plot's
+  root another way), comments in useQualityTier.ts / PrintStyles.tsx / reliefRedrawRatchet / reliefTheme.
+  **REMAINING (all one kind: "eight surfaces" enumerations → seven, and E1-only tests deleted):** tsc:
+  `reliefAccessibility.test.tsx:382` dynamic `import('@/components/geometry/DeckRelief')`;
+  `reliefFallback.test.tsx:560` DeckRelief/PANELS render; `reliefPrintPath.test.tsx:452` DeckRelief/PANELS
+  render. Failing (20): glContextBudget — worst route is now **AuditLog = 1** (no route reaches 2 any more:
+  relief pages' flats are SVG, chart pages have no relief) → CONCURRENT_CAP 3 → **1** and replace the single
+  WORST_ROUTE pin with the SET of routes at the cap (the six relief routes) so ties are not a diff; "each
+  relief has exactly one mount site" (read its message — likely `censused >= 9` → 8); shadowBaselineCensus ×2
+  (an E1 `SHADOW_SIZE` exception to drop / count 8 → 7); reliefTheme ×3 (owner list 8 → 7); reliefRedrawRatchet
+  ×3 + "E1 DeckReliefGl schedules no frame" (delete the E1-only test; counts 8 → 7); reliefFallback "covers all
+  eight" / "renders all eight" → seven, "no relief file touches document…" (list); reliefPrintPath "E1 DeckRelief
+  ships on CommandDeck" + "E1 keeps the flat figure" (delete), "all three printable surfaces … four unprintable"
+  → two printable / four unprintable (SurfaceRelief on CommandDeck, StormRelief on MarketingCrisis), "two print
+  attributes declared by the wrappers and the sheet" (re-read). THEN: tsc → suites → S5 step 3 (binds) and step
+  4 (the join) per the S5 BUILD SPEC → gate from ROOT → after-s5 capture (5189) then app sweep (5188) →
+  commit → push → verify-live → flip S5.
+- 2026-09-02 (resumed 05:09 IST) · **E1 RETIREMENT COMPLETE IN TREE.** Web tsc clean. Every "eight surfaces"
+  pin moved to seven (reliefFallback roster + GL_ENTRY_POINTS + 16 → 14 files + server-render cases;
+  reliefAccessibility SURFACES/nouns/FILES 7 → 6 and its refusal test RE-POINTED E1 → E5 SurfaceRelief rather
+  than deleted; reliefPrintPath PRINTABLE/printable lists, wrapper pair list, loading-state guard re-pointed to
+  E5 counting `svg`; reliefRedrawRatchet floors 8/7/7/7 → 7/6/6/6; reliefTheme 8/7/6/6/5 → 7/6/5/5/4;
+  shadowBaselineCensus KNOWN_OWNERS 8 → 7; useQualityTier list 8 → 7; glContextBudget owners ≥ 8). **GL
+  BUDGET RE-PINNED ON MEASUREMENT:** CONCURRENT_CAP **3 → 1** (no route can hold two contexts any more) and
+  the single worst-route name replaced by a pinned COUNT of routes at the cap = **15** (six relief routes +
+  nine flat-chart routes), with CommandDeck required among them. All relief suites green.
+- 2026-09-02 · **TWO CORRECTIONS TO THE S5 SPEC, FROM THE SOURCE.** (a) E2's "twelve placeholder cities" are
+  ALREADY GONE — `GlobeReliefGl.tsx:51-52`: "This file has a real book and no cities"; the globe sites the
+  market-map book (`buildGlobeBook(points).sites`) and refuses with NO_PLACEABLE_REGION when empty. E2 is KEPT
+  AS IS; the gps_client bind is dropped (it was aimed at a stale reading of the header). (b) "Watch marks on
+  E3/E5/E6" are bound in the WRAPPERS' DOM captions from `useArrivalStore` (per-compartment changed count +
+  top item, still, entitlement-aware) — not as per-renderer GL marks, which the instrument's no-API capture
+  could never see and which would be three shader/mesh programmes for a mark a caption states in words.
+  NEXT: step 4 (the join) then step 3 (captions), then gate.
+- 2026-09-02 · **S5 STEP 4 — THE JOIN — BUILT.** API `graph/links.ts`: `InspectorType` 11 → **18**
+  (`engagement target partner client draft holding asset`), resolvers for all of them AND for `jurisdiction`
+  (had a payload, no resolver); `RelatedResolver(pool, id, ctx)` takes the reader's entitlements from the
+  route (`loadEntitlements` + `capAtLeast`, per GROUP — `/v1/graph` stays outside the workspace gates because
+  it spans compartments); a group the reader does not hold is returned **WITHHELD** `{count 0, items [],
+  withheld: ws}` — and the PRE-S5 LEAK IS CLOSED: sales groups were served to every operator regardless of
+  compartment; now they are withheld below sales:view. `graph/__tests__/links.test.ts` (7) pins: withheld
+  groups never query the register, sales/gps/marketing each withheld for the reader without them, the
+  engagement's sales parent is a locked line for a gps-only reader. Web: `InspectorEntityType`, `ObjectType`,
+  `OBJECT_TYPES`, `INSPECTOR_TO_OBJECT`, `SalesGraph.NODE_COLOR` all widened; `RelatedPanel` renders withheld
+  groups as a locked line naming the compartment; payloads `GpsInspectors.tsx` (engagement, client, target,
+  partner, draft — through the desks' existing clients; drafts carry `engagementId` as seed because the
+  factory reads per engagement) and `MarketingInspectors.tsx` (asset, holding — from the one perimeter view,
+  showing its own "absence is not clearance" sentence; holdings keyed by member+asset seed since the view
+  carries no row ids). Ratchet `lib/__tests__/oneFloor.test.ts`: removed layers cannot return by import;
+  the six wrappers refuse to a flat form; the THREE unions are identical sets (18) and the registry maps
+  all; every resolvable type has an InspectorBody case; the panel says what is withheld. Suites: api 7/7,
+  web 50/50. **STEP 3 — captions:** `components/shared/ReliefWatchLine.tsx` reads the ACTIVE workspace's
+  room from `useArrivalStore` and is mounted in all six wrappers' control rows (DOM, still, no fetch).
+- 2026-09-02 · S5 tree COMPLETE: api + web tsc clean; 37 web suites / 467 tests touched by S5 green after two
+  more eight→seven pins (`qualityTierStamp.test` `KNOWN_SURFACES` 8 → 7; SalesGraph `NODE_COLOR` widened to
+  18; lucide has no `Handshake` → `HeartHandshake`). **S5 GATE #1 running from the ROOT →
+  `/tmp/gate-s5.log`.** Then, sequentially: after-s5 capture (`INSTRUMENT_OUT_DIR=…/after-s5`, port 5189) →
+  app sweep (`APP_SWEEP_OUT_DIR=…/after-s5/app-sweep`, port 5188 — FIRST drop E1 from its roster) → commit
+  with GL contexts 77 → N, eager bytes, chroma verdicts → push → `verify-live.sh <sha> --js 'do not hold'
+  --js 'Open holdings desk' --js-absent 'Theatre view'` (E1's toggle label is the deletion needle).
+- 2026-09-02 · **S5 GATE #1 RED, correctly, twice** (stage 4 = the web workspace's own full run, 2,737):
+  `aiProse.test` — the draft payload rendered MODEL OUTPUT in a `<pre>`; the repo's rule is that model output
+  is data rendered through `<AiProse>`, never markup → fixed. `marketingCeiling.test` — a new file naming a
+  `/v1/marketing` route (in my header comment) is a red by design; the payload reads only through the
+  ceilinged `fetchAbusePerimeter`, so the comment stops naming the route instead of widening the enumeration.
+  After-s5 capture launched meanwhile (no gate running); gate #2 AFTER the capture completes.
+- 2026-09-02 · **LIVE-CHECK DESIGN FOR S5, corrected before use.** My script fetches only assets the index
+  references (entry chunk + CSS), so E1's "Theatre view" label — in a LAZY page chunk — would pass a
+  `--js-absent` check vacuously; and X1's class string `inset-0 -z-10 overflow-hidden` is shared with the
+  sign-in ForgeBackdrop, so it is not a clean needle either. DELETION EVIDENCE IS NUMERIC: today's live entry
+  chunk `/assets/index-CDAxB4p2.js` = **427,034 B** and contains that class string ×1; after the deploy the
+  entry must be smaller by about X1's 3.9 KB eager cost and the count should be 0 if the ×1 was X1's (if it
+  stays 1, it is Forge's — say so, do not claim). POSITIVE needles prove the S5 build: `do not hold` (RelatedPanel
+  locked line) and `Open holdings desk` (marketing payload) are 0 in today's entry and must become present.
+  THE CLEAN DELETION NEEDLE: today's entry chunk contains `import("./shared-Ck7dlPah.js")` ×1 — the flat
+  renderer's shared-context chunk, reached from the entry ONLY through `useFlatChart`, whose sole eager importer
+  was X1. After the deploy the entry must contain NO `import("./shared-` at all →
+  `verify-live.sh <sha> --js 'do not hold' --js 'Open holdings desk' --js-absent 'import("./shared-'`.
+- 2026-09-02 · **S5 MEASURED (after-s5, HEAD 37fa9f6 tree + S5 edits):** routes creating a GL context at rest
+  **77 → 2** (`/select` = the sign-in Forge, by design; `/ontology` = 2 WebGL contexts — attribution below);
+  shell carries GL **true → false**; timer call sites 13 → 11; files in union 410 → 407; CSS motion at rest
+  still 1 (/ontology's React Flow edges); vt 76; rAF 0; intervals 2; errors 0. **ONE REGRESSION CAUGHT BY THE
+  CENSUS AND FIXED BEFORE COMMIT:** hex literals outside the token system 125 → **132** = my seven SalesGraph
+  `NODE_COLOR` hex values; replaced by `rgb(var(--green|--chart-2|--amber|--indigo|--chart-4|--chart-5|--red))`
+  (a node style is DOM, so token triples work) and confirmed by `INSTRUMENT_STATIC_ONLY=1` into a scratch dir:
+  **125**. The committed after-s5 report is RE-CAPTURED after the gate so its static block matches the tree.
+  Gate #2 running.
+  ATTRIBUTION of /ontology's "2": the orrery defaults ON (`reliefPreference.ts:50`, evidence-backed) and the
+  ontology explorer runs on COMPILED data — the one relief route the no-API capture does not starve into flat;
+  `createStage` rebuilds in place on the SAME canvas when size step / tier settles and `getContext('webgl2')`
+  returns the same object (`packages/gl/src/stage.ts:519-526`), and the probe counts CALLS → one live context.
+  OPEN ITEM (§4): the instrument should count DISTINCT canvases, not getContext calls.
+- 2026-09-02 · **S5 GATE #2 RED, correctly, once more:** `aiProseValidIds.test` — every `<AiProse>` call site must
+  declare the citation set it can back; a factory draft carries none → `validIds={[]}` ("say none, do not guess
+  a set into existence"). Fixed; gate #3 next, then the app sweep, then the full after-s5 RE-CAPTURE.
+- 2026-09-02 · **S5 GATE #3: five test stages GREEN (1,997 · 358 · 3,532 · 2,737 · 20), PERF BUDGET RED** —
+  initial JS **854 / 850** (was 820), largest chunk **452 / 440** (was 417): the seven join payloads were
+  imported STATICALLY by `InspectorBody` (eager in the shell) and dragged `lib/api/gps.ts`,
+  `gpsOrigination.ts` and `marketing.ts` (+ its honesty ceiling) into the entry — my own commit draft had
+  claimed "the payloads are lazy with the drawer", which was false until now. FIX: the seven cases are
+  `React.lazy` picks over two dynamic imports with a `Suspense` skeleton; the eleven original payloads stay
+  static (already eager). The budget is proved by `build` + `perf-budget` BEFORE gate #4, not by hope.
+- 2026-09-02 · **S5 GATE #4 CLEAN** (0 npm errors; 1,997 · 358 · 3,532 · 2,737 · 20; perf budget OK — initial JS
+  **820 / 850**, largest chunk **417 / 440**, 208 lazy page chunks). App sweep launched DETACHED (`nohup`, log
+  `/tmp/app-sweep-s5.log`, `APP_SWEEP_OUT_DIR=…/after-s5` → `after-s5/APP_SWEEP.md` + `after-s5/app-sweep/`,
+  captures git-ignored). Then the full after-s5 RE-CAPTURE (5189), then commit.
+- 2026-09-02 · **APP SWEEP RUN #1: 1/7 reached — E2–E6 `TOGGLE_DID_NOT_ENGAGE` in both themes.** Not a regression
+  of S5: the six kept reliefs DEFAULT ON since cafb955 (2026-08-21) and the sweep last ran 2026-08-14 (bd4f1c2)
+  against default-OFF toggles — it clicks an already-pressed toggle (turning the relief OFF) then waits for
+  `aria-pressed="true"`. A stale instrument, not six broken surfaces. FIX in `3d-audit-app.mjs`: if the toggle
+  is pressed before the sweep touches it, turn it OFF first (wait for the flip; `TOGGLE_STUCK_ON` if it never
+  does), take `preClick`/`flatBefore` with the relief genuinely off, then click to ENGAGE; rows carry
+  `defaultOn`. Sweep run #2 launched detached. (E7 `TOGGLE_DISABLED` is by design: no forward risk feed.)
+- 2026-09-02 · **APP SWEEP RUN #2: 6/7 reached in both themes, 0 findings, 0 worse in light** (E8 forge, E4
+  orrery, E3 pipeline, E2 globe, E6 vault, E5 surface; E7 disabled by design). Light/dark sd ratios 123–302%.
+  Reports at `docs/instrument/audit/after-s5/APP_SWEEP.md` + `app-sweep/README.md` (captures ignored). Full
+  after-s5 RE-CAPTURE launched detached (`/tmp/instrument-after-s5.log`); commit follows it.
 - 2026-09-02 · **S5 GROUNDING (read while S4's gate ran — cite, don't re-derive).** (1) The plan's `InspectorType`
   IS at **`apps/api/src/graph/links.ts:19`** (API side — my first grep searched web/shared only and I wrote
   "no longer exists"; corrected): 11 members `project deal handoff contact claim task signal listing decision

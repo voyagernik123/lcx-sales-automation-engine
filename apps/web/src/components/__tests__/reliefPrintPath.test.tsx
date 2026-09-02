@@ -4,7 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PrintStyles } from '@/components/report/PrintStyles';
-import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { PipelineRelief } from '@/components/geometry/PipelineRelief';
 import { VaultRelief } from '@/components/geometry/VaultRelief';
@@ -13,7 +12,6 @@ import { GlobeRelief } from '@/components/market/GlobeRelief';
 import { StormRelief } from '@/components/risk/StormRelief';
 import { buildRiskField, type RiskFieldInput } from '@/components/risk/riskField';
 import { buildSurfaceMesh, WITHHELD, type GridCellValue } from '@lcx/shared';
-import type { DeckPanelDatum } from '@/components/geometry/deckSlots';
 import type { OrreryEntityInput, OrreryCouplingInput } from '@/components/geometry/orrery/orreryLayout';
 import type { MapPoint } from '@/lib/api/bd';
 import type { BdFilters, BdLead } from '@/types/bd';
@@ -77,12 +75,6 @@ const SURFACE = buildSurfaceMesh({
     source: 'reliefPrintPath.test.tsx', valuesArePlaceholders: true,
   },
 });
-
-const PANELS: readonly DeckPanelDatum[] = [
-  { id: 'gating', title: 'Launch readiness', headline: '3/7 gates', note: null },
-  { id: 'work', title: 'Workstreams', headline: '5 workstreams', note: '41 tasks across them' },
-  { id: 'risks', title: 'Risk heatmap', headline: '9 risks', note: 'Critical risks present' },
-];
 
 const NOW = Date.parse('2026-08-13T00:00:00.000Z');
 const isoDaysAgo = (d: number): string => new Date(NOW - d * 86_400_000).toISOString();
@@ -159,11 +151,6 @@ interface Surface {
 }
 
 const SURFACES: readonly Surface[] = [
-  {
-    env: 'E1', name: 'DeckRelief', toggle: /theatre view/i,
-    mount: () => render(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>),
-    flatIsShowing: (c) => c.querySelector('[data-testid="flat"]') !== null,
-  },
   {
     env: 'E2', name: 'GlobeRelief', toggle: /globe view/i,
     mount: () => render(<GlobeRelief points={POINTS}>{FLAT}</GlobeRelief>),
@@ -248,18 +235,19 @@ function read(rel: string): string {
  * THIS DESCRIBE MUST STAY FIRST, and the reason is a property of `React.lazy` rather than a preference.
  *
  * `lazy()` caches its module: after the first successful resolve it renders SYNCHRONOUSLY and never
- * suspends again. Vitest gives each test FILE its own module registry, so the loading state of E1's
+ * suspends again. Vitest gives each test FILE its own module registry, so the loading state of E5's
  * renderer is observable exactly once in this file — on the first mount — and any test declared above this
- * one that clicks the theatre toggle spends it. Moved below the refusal suite, the assertion below still
+ * one that clicks the relief toggle spends it. (This guard ran on E1 until S5 retired it; the property is the
+ * wrapper pattern's, not one surface's, so it moved to E5 rather than being deleted.) Moved below the refusal suite, the assertion below still
  * passes and no longer looks at the state it names: it would be measuring the drawn state twice.
  */
 describe('the print copy never doubles the flat figure, in the state where doubling would show', () => {
-  it('has exactly ONE flat deck in the document while the chunk loads AND once it is drawn', async () => {
+  it('has exactly ONE flat figure in the document while the chunk loads AND once it is drawn', async () => {
     /*
      * THE HAZARD THIS SHAPE EXISTS TO AVOID. The obvious fix — a hidden print copy rendered ALONGSIDE the
      * visible figure — puts two of everything in the document, and several suites query the flat figure with
-     * `getByTestId`/`getByText`, which THROW on multiple matches: `deckRelief.test.tsx:48` does exactly that
-     * immediately after clicking this toggle, and `reliefAccessibility.test.tsx` finds its toggle by
+     * `getByTestId`/`getByText`, which THROW on multiple matches: the per-surface suites do exactly that
+     * immediately after clicking a toggle, and `reliefAccessibility.test.tsx` finds its toggle by
      * filtering all buttons to exactly one match.
      *
      * So the print copy is the second arm of the SAME Suspense boundary the renderer is in. React mounts one
@@ -269,21 +257,21 @@ describe('the print copy never doubles the flat figure, in the state where doubl
      */
     stubbed.drawn = true;
     try {
-      const { container } = render(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>);
-      expect(container.querySelectorAll('[data-testid="flat"]').length, 'default state').toBe(1);
+      const { container } = render(<SurfaceRelief surface={SURFACE} title="Win rate" readsAs="Higher is better." heightPx={300} />);
+      expect(container.querySelectorAll('svg').length, 'default state').toBe(1);
 
-      fireEvent.click(screen.getByRole('button', { name: /theatre view/i }));
+      fireEvent.click(screen.getByRole('button', { name: /relief view/i }));
       /* Still loading: nothing has resolved inside this synchronous turn, which is exactly why this test has
          to be first — see the note above the describe. */
       expect(container.querySelector('[data-testid="stub-canvas"]'),
         'the renderer resolved synchronously, so the loading state was never observed and this test is'
-        + ' no longer watching anything — check that no earlier test mounts DeckReliefGl').toBeNull();
-      expect(container.querySelectorAll('[data-testid="flat"]').length, 'while the chunk loads').toBe(1);
+        + ' no longer watching anything — check that no earlier test mounts SurfaceReliefGl').toBeNull();
+      expect(container.querySelectorAll('svg').length, 'while the chunk loads').toBe(1);
 
       await waitFor(() => {
         expect(container.querySelector('[data-testid="stub-canvas"]')).not.toBeNull();
       });
-      expect(container.querySelectorAll('[data-testid="flat"]').length, 'once the relief is drawn').toBe(1);
+      expect(container.querySelectorAll('svg').length, 'once the relief is drawn').toBe(1);
     } finally {
       stubbed.drawn = false;
     }
@@ -292,12 +280,12 @@ describe('the print copy never doubles the flat figure, in the state where doubl
 
 /* ── WHAT AN UNATTENDED ⌘P ACTUALLY PRINTS ───────────────────────────────────────── */
 
-describe('the default state is the printed state, on every one of the seven', () => {
+describe('the default state is the printed state, on every one of the six', () => {
   it.each(SURFACES.map((s) => [s.env, s.name, s] as const))(
     '%s %s prints its flat form, because that is what is in the document',
     (_env, name, s) => {
       /*
-       * THE ONE PRINT GUARANTEE THAT NEEDS NO CSS. All seven default to `useState(false)`, so a reader who
+       * THE ONE PRINT GUARANTEE THAT NEEDS NO CSS. All six default to `useState(false)`, so a reader who
        * never pressed the toggle has the flat figure in the document and no canvas — and print, having no
        * toggle, is permanently in that state unless a reader opened the relief and then printed. This is
        * asserted per surface rather than argued once because it is the only reason the absence of a print
@@ -353,7 +341,6 @@ describe('which relief surfaces can reach paper at all', () => {
    * page, or `PrintStyles` to a page that has one, is a test failure that says what to check.
    */
   const PRINTABLE: readonly (readonly [string, string, string])[] = [
-    ['E1 DeckRelief', 'src/pages/CommandDeck.tsx', 'DeckRelief'],
     ['E5 SurfaceRelief', 'src/pages/CommandDeck.tsx', 'CockpitPanels'],
     ['E7 StormRelief', 'src/pages/MarketingCrisis.tsx', 'StormRelief'],
   ];
@@ -416,7 +403,7 @@ describe('which relief surfaces can reach paper at all', () => {
  * back to flat. That is why every other test in this file, and all of `reliefFallback.test.tsx`, observes
  * the REFUSED state — and it is why the print question could only ever be *documented* here before now.
  *
- * So E1, E5 and E7's GL modules are stubbed for this file. The stub REFUSES BY DEFAULT, exactly as the
+ * So E5 and E7's GL modules are stubbed for this file (E1's too, until S5 retired it). The stub REFUSES BY DEFAULT, exactly as the
  * real renderer does in jsdom, and draws a canvas only while `stubbed.drawn` is set — so the refusal
  * tests above still exercise the wrapper's swap-back, and only the three tests that need a live canvas
  * get one. Two honest limits: those three refusals now come from a stub rather than from `createStage`
@@ -446,7 +433,6 @@ async function stubRenderer() {
   };
   return { default: StubGl };
 }
-vi.mock('@/components/geometry/DeckReliefGl', () => stubRenderer());
 vi.mock('@/components/geometry/SurfaceReliefGl', () => stubRenderer());
 vi.mock('@/components/risk/StormReliefGl', () => stubRenderer());
 
@@ -460,11 +446,6 @@ interface OpenSurface {
 }
 
 const PRINT_SURFACES: readonly OpenSurface[] = [
-  {
-    env: 'E1', name: 'DeckRelief', toggle: /theatre view/i,
-    mount: () => render(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>),
-    flatMark: (r) => r.querySelector('[data-testid="flat"]'),
-  },
   {
     env: 'E5', name: 'SurfaceRelief', toggle: /relief view/i,
     mount: () => render(<SurfaceRelief surface={SURFACE} title="Win rate" readsAs="Higher is better." heightPx={300} />),
@@ -581,7 +562,7 @@ describe('a relief that is OPEN when ⌘P happens prints its flat form', () => {
   });
 });
 
-describe('E7 says the right thing about print, and E1 and E5 now say it too', () => {
+describe('E7 says the right thing about print, and E5 now says it too (E1 did, until S5 retired it)', () => {
   it('keeps its control off the paper and its calibration sentence with the volume it describes', () => {
     /*
      * `MarketingCrisis` is a record page that mounts `PrintStyles`, so its output is an artefact somebody
@@ -628,7 +609,7 @@ describe('E7 says the right thing about print, and E1 and E5 now say it too', ()
     }
   });
 
-  it('all three printable surfaces now carry a print rule, and the four unprintable ones still do not', () => {
+  it('both printable surfaces carry a print rule, and the four unprintable ones still do not', () => {
     /*
      * WAS A COUNT OF ONE, AND THE COUNT WAS THE DEFECT. This asserted `['risk/StormRelief.tsx']` — E7 was
      * the only relief file that said anything about print at all, which is why E1's and E5's toggles and
@@ -641,7 +622,6 @@ describe('E7 says the right thing about print, and E1 and E5 now say it too', ()
      * `PrintStyles` to its page would be a rule that never fires. If that changes, this fails and says so.
      */
     const printable: readonly string[] = [
-      'src/components/geometry/DeckRelief.tsx',
       'src/components/geometry/SurfaceRelief.tsx',
       'src/components/risk/StormRelief.tsx',
     ];
@@ -651,7 +631,7 @@ describe('E7 says the right thing about print, and E1 and E5 now say it too', ()
       'src/components/geometry/OntologyOrrery.tsx',
       'src/components/market/GlobeRelief.tsx',
     ];
-    expect(printable.length + unprintable.length, 'an empty list would make this pass without reading a file').toBe(7);
+    expect(printable.length + unprintable.length, 'an empty list would make this pass without reading a file').toBe(6);
 
     const hasRule = (f: string) => {
       const src = read(f);
@@ -675,8 +655,7 @@ describe('E7 says the right thing about print, and E1 and E5 now say it too', ()
     for (const attr of ['[data-relief-live]', '[data-relief-print-flat]']) {
       expect(sheet.includes(attr), `PrintStyles no longer styles ${attr} for paper`).toBe(true);
     }
-    for (const f of ['src/components/geometry/DeckRelief.tsx', 'src/components/geometry/SurfaceRelief.tsx',
-      'src/components/risk/StormRelief.tsx']) {
+    for (const f of ['src/components/geometry/SurfaceRelief.tsx', 'src/components/risk/StormRelief.tsx']) {
       const src = read(f);
       expect(src.includes('data-relief-print-flat'), `${f} stopped rendering a flat form for print`).toBe(true);
       expect(src.includes('data-relief-live'), `${f} stopped marking its live block print-removable`).toBe(true);

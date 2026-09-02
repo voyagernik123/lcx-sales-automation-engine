@@ -19,6 +19,12 @@ export interface RelatedGroup {
   inspector: InspectorEntityType;
   count: number;
   items: RelatedItem[];
+  /**
+   * S5: present when the group lives in a compartment the reader does not hold. `count` is 0 and
+   * `items` empty by construction; the panel renders a locked line naming the compartment instead
+   * of showing a smaller world as if it were the whole one.
+   */
+  withheld?: string;
 }
 
 export interface RelatedResponse {

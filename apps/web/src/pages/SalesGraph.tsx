@@ -27,6 +27,10 @@ const NODE_COLOR: Record<InspectorEntityType, string> = {
   project: '#06b6d4', contact: '#8b5cf6', deal: '#10b981', listing: '#f59e0b',
   handoff: '#0ea5e9', signal: '#f97316', task: '#14b8a6', document: '#64748b',
   decision: '#d946ef', claim: '#6366f1', jurisdiction: '#f43f5e',
+  // S5 · the join: gps and marketing objects reach the graph. TOKEN REFERENCES, not hex: the S0 census counts
+  // hex literals outside the token system (125 at S2, held), and a node style is DOM, so `rgb(var(--…))` works.
+  engagement: 'rgb(var(--green))', client: 'rgb(var(--chart-2))', target: 'rgb(var(--amber))',
+  partner: 'rgb(var(--indigo))', draft: 'rgb(var(--chart-4))', holding: 'rgb(var(--chart-5))', asset: 'rgb(var(--red))',
 };
 
 interface GNode { id: string; inspector: InspectorEntityType; entityId: string; label: string; seed?: Record<string, unknown>; expanded: boolean; seedNode: boolean; }

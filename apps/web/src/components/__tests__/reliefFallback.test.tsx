@@ -3,7 +3,6 @@ import { render, screen, fireEvent, waitFor, type RenderResult } from '@testing-
 import { MemoryRouter } from 'react-router-dom';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { PipelineRelief } from '@/components/geometry/PipelineRelief';
 import { VaultRelief } from '@/components/geometry/VaultRelief';
@@ -15,7 +14,6 @@ import { ForgePlate } from '@/components/brand/ForgePlate';
 import { storage } from '@/lib/persistence';
 import { buildRiskField, type RiskFieldInput } from '@/components/risk/riskField';
 import { buildSurfaceMesh, WITHHELD, type GridCellValue } from '@lcx/shared';
-import type { DeckPanelDatum } from '@/components/geometry/deckSlots';
 import type { OrreryEntityInput, OrreryCouplingInput } from '@/components/geometry/orrery/orreryLayout';
 import type { MapPoint } from '@/lib/api/bd';
 import type { BdFilters, BdLead } from '@/types/bd';
@@ -29,8 +27,9 @@ import type { BdFilters, BdLead } from '@/types/bd';
  * Every mechanised check of rule 1 in this repo points at `docs/3d`. `scripts/3d-audit.mjs` drives
  * reduced motion, print and no-WebGL against the HARNESS pages, and `packages/gl/src/env/harnessRules.test.ts`
  * globs the `docs/3d` environment directories. Neither knows `apps/web` exists. The eight surfaces a reader actually meets —
- * DeckRelief, SurfaceRelief, PipelineRelief, VaultRelief, OntologyOrrery, GlobeRelief, StormRelief and
- * ForgeBackdrop — had no rule-1 verification at all, on any axis.
+ * SurfaceRelief, PipelineRelief, VaultRelief, OntologyOrrery, GlobeRelief, StormRelief and ForgeBackdrop
+ * (DeckRelief too, until S5 of INSTRUMENT_100X_PLAN retired it on 2026-09-02) — had no rule-1 verification
+ * at all, on any axis.
  *
  * Each of the seven relief surfaces already has its own test file, and each of those asserts the flat
  * DEFAULT and the Suspense fallback. None of them ever awaited the lazy chunk, so none of them had
@@ -63,13 +62,6 @@ const SURFACE = buildSurfaceMesh({
   },
 });
 
-/* Three, not two: `DeckRelief` disables its own toggle below two panels, and a disabled toggle would
-   make every assertion below pass without a GL context ever being asked for. */
-const PANELS: readonly DeckPanelDatum[] = [
-  { id: 'gating', title: 'Launch readiness', headline: '3/7 gates', note: null },
-  { id: 'work', title: 'Workstreams', headline: '5 workstreams', note: '41 tasks across them' },
-  { id: 'risks', title: 'Risk heatmap', headline: '9 risks', note: 'Critical risks present' },
-];
 
 const NOW = Date.parse('2026-08-13T00:00:00.000Z');
 const isoDaysAgo = (d: number): string => new Date(NOW - d * 86_400_000).toISOString();
@@ -154,11 +146,6 @@ interface Surface {
 }
 
 const SURFACES: readonly Surface[] = [
-  {
-    env: 'E1', name: 'DeckRelief', src: 'src/components/geometry/DeckRelief.tsx', toggle: /theatre view/i,
-    mount: () => render(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>),
-    flatIsShowing: (c) => c.querySelector('[data-testid="flat"]') !== null,
-  },
   {
     env: 'E2', name: 'GlobeRelief', src: 'src/components/market/GlobeRelief.tsx', toggle: /globe view/i,
     mount: () => render(<GlobeRelief points={POINTS}>{FLAT}</GlobeRelief>),
@@ -268,7 +255,7 @@ beforeEach(() => { storage.clearAll(); });
 /* ── AXIS 1 · NO WEBGL2 ──────────────────────────────────────────────────────────── */
 
 describe('rule 1 · a real StageRefusal puts every shipping surface back on its flat view', () => {
-  it('covers all eight shipping surfaces and no fewer', () => {
+  it('covers all seven shipping surfaces and no fewer', () => {
     /*
      * THE ROSTER IS THE POINT OF THIS FILE, so it is asserted rather than assumed. The blind spot being
      * closed was one of COVERAGE — `docs/3d` was checked and `apps/web` was not — and a table-driven
@@ -276,10 +263,10 @@ describe('rule 1 · a real StageRefusal puts every shipping surface back on its 
      */
     const covered = SURFACES.map((s) => s.name);
     expect(covered).toEqual([
-      'DeckRelief', 'GlobeRelief', 'PipelineRelief', 'OntologyOrrery',
+      'GlobeRelief', 'PipelineRelief', 'OntologyOrrery',
       'SurfaceRelief', 'VaultRelief', 'StormRelief',
-    ]);
-    /* ForgeBackdrop is the eighth and is tested separately below: it has no toggle and no flat
+    ]); // DeckRelief led this list until S5 of INSTRUMENT_100X_PLAN retired it (2026-09-02)
+    /* ForgeBackdrop is the seventh and is tested separately below: it has no toggle and no flat
        counterpart to swap to, because `ForgePlate` is painted underneath it at all times. */
     for (const s of [...SURFACES, { src: 'src/components/brand/ForgeBackdrop.tsx' }]) {
       const file = resolve(process.cwd(), s.src);
@@ -394,7 +381,6 @@ describe('rule 1 · a real StageRefusal puts every shipping surface back on its 
 /* ── AXIS 3 · REDUCED MOTION ─────────────────────────────────────────────────────── */
 
 const GL_ENTRY_POINTS: readonly (readonly [string, string])[] = [
-  ['E1 DeckReliefGl', 'src/components/geometry/DeckReliefGl.tsx'],
   ['E2 GlobeReliefGl', 'src/components/market/GlobeReliefGl.tsx'],
   ['E3 PipelineReliefGl', 'src/components/geometry/PipelineReliefGl.tsx'],
   ['E4 OntologyOrreryGl', 'src/components/geometry/OntologyOrreryGl.tsx'],
@@ -561,16 +547,15 @@ describe('rule 3 · reduced motion resolves to the final frame, not to a faster 
 /* ── AXIS 4 · SERVER RENDER ──────────────────────────────────────────────────────── */
 
 describe('rule 1 · a server render resolves to the flat surface instead of throwing', () => {
-  it('renders all eight on the server, and only the scenery emits a canvas', async () => {
+  it('renders all seven on the server, and only the scenery emits a canvas', async () => {
     /*
      * `renderToString` runs no effects and has no refs, so this is the medium in which a DOM global read
      * during module evaluation or the render phase becomes a 500 rather than a degraded picture. All
-     * eight are exercised in one test because the interesting result is the TABLE — one surface throwing
-     * while seven pass is the finding, and eight separate tests hide which.
+     * seven (eight until S5 retired E1) are exercised in one test because the interesting result is the
+     * TABLE — one surface throwing while six pass is the finding, and seven separate tests hide which.
      */
     const { renderToString } = await import('react-dom/server');
     const cases: readonly (readonly [string, () => string])[] = [
-      ['E1 DeckRelief', () => renderToString(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>)],
       ['E2 GlobeRelief', () => renderToString(<GlobeRelief points={POINTS}>{FLAT}</GlobeRelief>)],
       ['E3 PipelineRelief', () => renderToString(<MemoryRouter><PipelineRelief {...TABLE_PROPS} /></MemoryRouter>)],
       ['E4 OntologyOrrery', () => renderToString(
@@ -586,7 +571,7 @@ describe('rule 1 · a server render resolves to the flat surface instead of thro
         <StormRelief field={FIELD} title="Marketing risk" readsAs="Colour is a total." heightPx={240} />,
       )],
     ];
-    expect(cases.length, 'an empty case list would make every assertion below vacuous').toBe(7);
+    expect(cases.length, 'an empty case list would make every assertion below vacuous').toBe(6) /* seven until S5 retired E1 */;
 
     for (const [label, run] of cases) {
       let html = '';
@@ -622,7 +607,8 @@ describe('rule 1 · a server render resolves to the flat surface instead of thro
       'src/components/brand/ForgeBackdrop.tsx',
       'src/components/brand/ForgePlate.tsx',
     ];
-    expect(files.length, 'an empty file list would make this pass without reading anything').toBe(16);
+    /* 6 wrappers + 6 renderers + the two Forge files. Sixteen until S5 retired E1 (2026-09-02). */
+    expect(files.length, 'an empty file list would make this pass without reading anything').toBe(14);
     const offenders: string[] = [];
     let seen = 0;
     for (const rel of files) {

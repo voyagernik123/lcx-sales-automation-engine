@@ -1,13 +1,14 @@
 import {
-  Boxes, Briefcase, FileBarChart, FileText, Gavel, ListChecks, MessageSquare,
-  Newspaper, Scale, User, Zap, type LucideIcon,
+  Boxes, Briefcase, Building2, Coins, FileBarChart, FileText, Gavel, HeartHandshake, ListChecks, Lock,
+  MessageSquare, Newspaper, PenLine, Scale, Target, User, Zap, type LucideIcon,
 } from 'lucide-react';
 import type { InspectorEntityType } from '@/stores/useInspectorStore';
 
 /**
  * The object registry — the platform's periodic table (FINAL_MASTER_PLAN 3.1).
  *
- * Every noun rendered anywhere must be one of these 11 types, and every
+ * Every noun rendered anywhere must be one of these 18 types (11 until S5 of
+ * INSTRUMENT_100X_PLAN added the gps and marketing objects, 2026-09-02), and every
  * rendering goes through the same four zoom levels: L1 mention (EntityChip),
  * L2 peek (hover card), L3 inspector (drawer payload), L4 workspace (route).
  *
@@ -25,7 +26,15 @@ export type ObjectType =
   | 'signal'
   | 'task'
   | 'document'
-  | 'decision';
+  | 'decision'
+  // S5 · the join: the compartments that carry the money and the liability.
+  | 'engagement'
+  | 'target'
+  | 'partner'
+  | 'client'
+  | 'draft'
+  | 'holding'
+  | 'asset';
 
 export interface ObjectTypeDef {
   /** Singular display label ("Project"). */
@@ -117,6 +126,57 @@ export const OBJECT_TYPES: Record<ObjectType, ObjectTypeDef> = {
     inspector: 'decision', // id is the decided deal's id
     route: () => '/win-loss',
   },
+  /* ── S5 · gps ─────────────────────────────────────────────────────────────── */
+  engagement: {
+    label: 'Engagement',
+    icon: HeartHandshake,
+    dotCls: 'bg-status-ready',
+    inspector: 'engagement',
+    route: () => '/gps/delivery',
+  },
+  client: {
+    label: 'Client',
+    icon: Building2,
+    dotCls: 'bg-sky-500',
+    inspector: 'client',
+    route: () => '/gps/book',
+  },
+  target: {
+    label: 'Target',
+    icon: Target,
+    dotCls: 'bg-amber-500',
+    inspector: 'target',
+    route: () => '/gps/origination',
+  },
+  partner: {
+    label: 'Partner',
+    icon: HeartHandshake,
+    dotCls: 'bg-indigo-500',
+    inspector: 'partner', // id is gps_partner_registry.partner_id
+    route: () => '/gps/partner-registry',
+  },
+  draft: {
+    label: 'Deliverable draft',
+    icon: PenLine,
+    dotCls: 'bg-lime-600',
+    inspector: 'draft', // id is gps_draft.id; the factory renders it under its engagement
+    route: () => '/gps/delivery',
+  },
+  /* ── S5 · marketing ───────────────────────────────────────────────────────── */
+  holding: {
+    label: 'Holdings declaration',
+    icon: Coins,
+    dotCls: 'bg-status-conditional',
+    inspector: 'holding',
+    route: () => '/marketing/holdings',
+  },
+  asset: {
+    label: 'Asset',
+    icon: Lock,
+    dotCls: 'bg-status-blocked',
+    inspector: 'asset', // id is the asset symbol; the embargo register is keyed by it
+    route: () => '/marketing/holdings',
+  },
 };
 
 /** Inspector payload type → object type, for breadcrumb labels. */
@@ -132,6 +192,13 @@ export const INSPECTOR_TO_OBJECT: Record<InspectorEntityType, ObjectType> = {
   decision: 'decision',
   jurisdiction: 'jurisdiction',
   document: 'document',
+  engagement: 'engagement',
+  target: 'target',
+  partner: 'partner',
+  client: 'client',
+  draft: 'draft',
+  holding: 'holding',
+  asset: 'asset',
 };
 
 /* ── what GET /v1/search returns ──────────────────────────────────────────────

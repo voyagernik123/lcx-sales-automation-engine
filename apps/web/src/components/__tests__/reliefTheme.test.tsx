@@ -274,8 +274,9 @@ beforeEach(() => {
   __resetQualityTierForTests();
   document.documentElement.className = '';
   gl = installFakeGl();
-  /* A REAL SIZE. `clientWidth` is 0 in jsdom, and `DeckReliefGl` refuses below 480 px — a suite that measured
-     nothing because every surface refused would pass every assertion in it. */
+  /* A REAL SIZE. `clientWidth` is 0 in jsdom, and the reliefs refuse below their minimum widths (the retired
+     `DeckReliefGl` drew the line at 480 px) — a suite that measured nothing because every surface refused
+     would pass every assertion in it. */
   vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get').mockReturnValue(960);
   vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get').mockReturnValue(420);
 });
@@ -293,12 +294,12 @@ describe('every 3-D surface answers to the page theme, or says in writing why it
     /* Two floors, because each census below is vacuous if its glob comes back empty — which is how this class
        of guard dies. Eight today: seven reliefs plus `brand/ForgeBackdrop.tsx`. */
     expect(OWNERS.length, 'no createStage call sites found under src/components')
-      .toBeGreaterThanOrEqual(8);
+      .toBeGreaterThanOrEqual(7);
     const withData = OWNERS.filter((o) => o.carriesData);
     expect(withData.length,
       `only ${withData.length} of ${OWNERS.length} context owners were classified as carrying data — the`
       + ' classifier is broken and every assertion below would pass on an empty set')
-      .toBeGreaterThanOrEqual(7);
+      .toBeGreaterThanOrEqual(6);
   });
 
   it('reads the live theme, rather than mentioning it in a comment', () => {
@@ -315,7 +316,7 @@ describe('every 3-D surface answers to the page theme, or says in writing why it
         `${o.id} calls sceneTheme but never liveTheme, so it cannot know WHICH theme is on the page.`)
         .toBe(true);
     }
-    expect(checked, 'no themed owner was checked — the loop above proved nothing').toBeGreaterThanOrEqual(6);
+    expect(checked, 'no themed owner was checked — the loop above proved nothing').toBeGreaterThanOrEqual(5);
   });
 
   it('every NOT_THEMED entry is still a real, unthemed surface', () => {
@@ -358,7 +359,7 @@ describe('a theme change reaches the canvas, and is cleaned up', () => {
         expect(re.test(o.src), `${o.id}: ${why}`).toBe(true);
       }
     }
-    expect(checked, 'no themed owner was checked for the observer').toBeGreaterThanOrEqual(6);
+    expect(checked, 'no themed owner was checked for the observer').toBeGreaterThanOrEqual(5);
   });
 
   /*
@@ -533,7 +534,7 @@ describe('the light rig moves by ratio, so the dark frame is arithmetic identity
       expect(/shadowStrength:\s*[A-Za-z0-9_.]+\s*\*\s*rig\.shadow/.test(o.src),
         `${o.id} does not scale its own shadow strength by the theme ratio`).toBe(true);
     }
-    expect(checked, 'no owner was checked for the ratio rule').toBeGreaterThanOrEqual(5);
+    expect(checked, 'no owner was checked for the ratio rule').toBeGreaterThanOrEqual(4);
   });
 
   it('no themed owner takes a DATA colour from the theme', () => {

@@ -1,0 +1,3 @@
+# Captures are evidence for the run that made them, not for the repo: the reports (APP_SWEEP.md, README.md)
+# carry the numbers; the pixels are re-made by re-running the sweep.
+*.png

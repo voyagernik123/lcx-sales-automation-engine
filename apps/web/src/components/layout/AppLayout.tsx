@@ -24,7 +24,6 @@ import { useHints } from '@/hooks/useHints';
 import { useSplitViewChord } from '@/hooks/useSplitView';
 import { HintLayer } from '@/components/help/HintLayer';
 import { TourHost } from '@/components/teach/TourHost';
-import { SignatureBackdrop } from '@/components/command/SignatureBackdrop';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
@@ -252,17 +251,13 @@ export function AppLayout() {
      * makes this div the context. `pages/CommandDeck.tsx:89` already carries the same pair for
      * the same reason. */
     <div className="relative isolate flex h-screen flex-col bg-page text-navy">
-      {/* X1 · AMBIENT. The one 3-D surface that is not opt-in — see the component for the
-        * measurement that decides its amplitude, and for why it renders NOTHING in the light
-        * theme. It costs no new GL context (it goes through `flat/shared.ts`, the same single
-        * offscreen context every chart uses), draws no dataset, and takes no pointer events.
-        *
-        * It is mounted HERE rather than per page because this div is the only element that
-        * spans the shell: `MainContent` has no background of its own, so `bg-page` above is
-        * what a reader currently sees behind every route's cards, and this layer is what
-        * replaces it. `/select` and `/lcxos` are siblings of this layout and are deliberately
-        * not covered — the sign-in screen has E8's ForgeBackdrop already. */}
-      <SignatureBackdrop />
+      {/* X1 · THE AMBIENT BACKDROP WAS REMOVED HERE (S5 of INSTRUMENT_100X_PLAN, 2026-09-02). Its own
+        * header was the measurement: in the default light theme it drew NOTHING (any plate over the page
+        * loses 31+ levels; five certified roles fall under 4.5:1 at zero amplitude), and in dark it drew an
+        * empty vignetted plate behind 77 routes — one GL context per route and 3.9 KB of eager JS for a
+        * surface that said nothing. `bg-page` above is what a reader sees behind every route's cards, in
+        * both themes, as it already was in light. The derived facts the layer's test pinned are kept in
+        * docs/instrument/LEDGER.md §5 so they are not re-derived. */}
       {/* Bypass Blocks (WCAG 2.4.1), and the most expensive focus defect measured
        * in this shell. Tabbing from the top of any route walked 24 chrome stops
        * before reaching the page content — 6 in the top bar, 17 sidebar

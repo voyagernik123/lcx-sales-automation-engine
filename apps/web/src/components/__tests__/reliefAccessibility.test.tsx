@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { PipelineRelief } from '@/components/geometry/PipelineRelief';
 import { VaultRelief } from '@/components/geometry/VaultRelief';
@@ -100,11 +99,11 @@ interface Surface {
  * CONTROLS — name/state agreement, focus retention through a swap, the refusal announcement — and
  * every one of those choreographies begins with a pristine, untriggered toggle. The defaults
  * themselves are pinned in reliefPreference.test.ts and the per-surface suites; here each test
- * starts from an explicit remembered "off" for all seven, which is a real production state (an
+ * starts from an explicit remembered "off" for all six (seven until S5 retired the deck), which is a real production state (an
  * operator said no last week) and puts every surface, storm included, on identical footing.
  */
 const ALL_RELIEF_KEYS = [
-  'relief:deck', 'relief:globe', 'relief:pipeline', 'relief:orrery',
+  'relief:globe', 'relief:pipeline', 'relief:orrery',
   'relief:surface', 'relief:vault', 'relief:storm',
 ] as const;
 beforeEach(() => {
@@ -113,25 +112,6 @@ beforeEach(() => {
 });
 
 const SURFACES: readonly Surface[] = [
-  {
-    name: 'geometry/DeckRelief.tsx',
-    noun: 'Theatre view',
-    mount: () => render(
-      <DeckRelief panels={[
-        { id: 'a', title: 'A', headline: '1/2 gates', note: null },
-        { id: 'b', title: 'B', headline: '4', note: null },
-      ]}
-      >
-        <p>flat deck</p>
-      </DeckRelief>,
-    ).container,
-    /* One panel is not a room: the wrapper refuses to arrange a single panel in depth. */
-    mountUnavailable: () => render(
-      <DeckRelief panels={[{ id: 'a', title: 'A', headline: '1', note: null }]}>
-        <p>flat deck</p>
-      </DeckRelief>,
-    ).container,
-  },
   {
     name: 'geometry/SurfaceRelief.tsx',
     noun: 'Relief view',
@@ -242,8 +222,8 @@ describe('the relief toggles are operable without a mouse and without sight', ()
      * shortened list passes while proving nothing. Seven wrappers own a relief toggle; a new
      * environment, or a wrapper quietly dropped from this file, fails here.
      */
-    expect(SURFACES.length).toBe(7);
-    expect(new Set(SURFACES.map((s) => s.noun)).size).toBe(7);
+    expect(SURFACES.length).toBe(6); // seven until S5 of INSTRUMENT_100X_PLAN retired the deck (2026-09-02)
+    expect(new Set(SURFACES.map((s) => s.noun)).size).toBe(6);
   });
 
   it('every toggle is a real button, in the tab ring, and not `disabled`', () => {
@@ -317,8 +297,7 @@ describe('the relief toggles are operable without a mouse and without sight', ()
     /* Three wrappers can refuse from their INPUT rather than from the renderer, so this is the set
        that can be proved without a GL context. Asserted non-empty because a filter that quietly
        matched nothing would make every assertion below unreachable. */
-    expect(withRefusal.map((s) => s.name)).toEqual([
-      'geometry/DeckRelief.tsx', 'geometry/PipelineRelief.tsx', 'risk/StormRelief.tsx',
+    expect(withRefusal.map((s) => s.name)).toEqual([ 'geometry/PipelineRelief.tsx', 'risk/StormRelief.tsx',
     ]);
 
     for (const s of withRefusal) {
@@ -357,7 +336,7 @@ describe('the relief toggles are operable without a mouse and without sight', ()
      * on <body> and a keyboard reader has to Tab back from the top of the page to turn relief off.
      */
     const swappable = SURFACES.filter((s) => s.noun !== 'Channel view');
-    expect(swappable.length).toBe(6);
+    expect(swappable.length).toBe(5); // six until S5 retired the deck
     for (const s of swappable) {
       const container = s.mount();
       const btn = toggleIn(container, s.noun);
@@ -377,8 +356,9 @@ describe("a renderer's refusal is announced, and does not cost the reader their 
      * The ONE path that needs the renderer mocked. `refusal` is only settable by the GL child, and
      * this is the exact moment the old code broke: the reader presses Enter, the chunk loads, the
      * renderer's mount effect refuses, and `disabled={refusal !== null}` blurred the still-focused
-     * button. DeckRelief stands in for the shared shape — it is the only one whose refusal path can
-     * be driven without also standing up a flat chart, a table or a force layout.
+     * button. SurfaceRelief stands in for the shared shape (DeckRelief did, until S5 of
+     * INSTRUMENT_100X_PLAN retired it): its flat form is the surface plot's own refusal card, so the
+     * refusal path is driven without standing up a table or a force layout.
      */
     /*
      * NAMED, and uppercase, because an anonymous arrow assigned to `default:` is not a component
@@ -386,8 +366,8 @@ describe("a renderer's refusal is announced, and does not cost the reader their 
      * rejects the `useEffect` inside it. The lint error is pedantic here and also correct in
      * general: a lowercase-named function holding a hook is a real bug everywhere except a mock.
      */
-    vi.doMock('@/components/geometry/DeckReliefGl', () => {
-      function RefusingDeckRelief({ onRefused }: { onRefused: (code: string) => void }) {
+    vi.doMock('@/components/geometry/SurfaceReliefGl', () => {
+      function RefusingSurfaceRelief({ onRefused }: { onRefused: (code: string) => void }) {
         /* In an effect, not in render: `onRefused` sets state on the parent. Required from
            INSIDE the factory rather than imported at the top of the file: `vi.resetModules()`
            below rebuilds the graph, and a hook taken from this file's own React binding would
@@ -396,22 +376,20 @@ describe("a renderer's refusal is announced, and does not cost the reader their 
         React.useEffect(() => { onRefused('FLOAT_TARGET_REFUSED'); }, [onRefused]);
         return null;
       }
-      return { default: RefusingDeckRelief };
+      return { default: RefusingSurfaceRelief };
     });
     vi.resetModules();
-    const { DeckRelief: Fresh } = await import('@/components/geometry/DeckRelief');
+    const { SurfaceRelief: Fresh } = await import('@/components/geometry/SurfaceRelief');
 
     const { container } = render(
-      <Fresh panels={[
-        { id: 'a', title: 'A', headline: '1', note: null },
-        { id: 'b', title: 'B', headline: '2', note: null },
-      ]}
-      >
-        <p>flat deck</p>
-      </Fresh>,
+      <Fresh
+        surface={{ kind: 'refused', refusals: [] }}
+        title="Scores"
+        readsAs="height is the score a slice cannot show"
+      />,
     );
 
-    const btn = toggleIn(container, 'Theatre view');
+    const btn = toggleIn(container, 'Relief view');
     btn.focus();
     await act(async () => { fireEvent.click(btn); });
 
@@ -421,7 +399,7 @@ describe("a renderer's refusal is announced, and does not cost the reader their 
       expect(alert!.textContent).toContain('FLOAT_TARGET_REFUSED');
     });
 
-    const after = toggleIn(container, 'Theatre view');
+    const after = toggleIn(container, 'Relief view');
     expect(after.getAttribute('aria-disabled')).toBe('true');
     expect(after.disabled, '`disabled` on a refusal is what blurred the focused button').toBe(false);
     expect(document.activeElement, 'the refusal threw focus to <body>').toBe(after);
@@ -447,7 +425,6 @@ describe('no relief wrapper paints its own interface colours', () => {
    * token layer, where `lib/__tests__/contrast.test.ts` can see them.
    */
   const FILES = [
-    'components/geometry/DeckRelief.tsx',
     'components/geometry/SurfaceRelief.tsx',
     'components/geometry/PipelineRelief.tsx',
     'components/geometry/VaultRelief.tsx',
@@ -467,7 +444,7 @@ describe('no relief wrapper paints its own interface colours', () => {
   const CANVAS_LABEL_HEX = new Set(['#BFD6FF', '#7FE3C0']);
 
   it('every interface colour comes from a token, not a literal', () => {
-    expect(FILES.length).toBe(7);
+    expect(FILES.length).toBe(6);
     const offences: string[] = [];
     for (const rel of FILES) {
       const src = readFileSync(join(__dirname, '..', '..', rel), 'utf8');

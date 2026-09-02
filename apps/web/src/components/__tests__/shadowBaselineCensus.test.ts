@@ -52,7 +52,7 @@ import { join, relative, resolve } from 'node:path';
 const SRC = resolve(process.cwd(), 'src');
 
 /** The eight shadow-owning components the app sweep walks. A FLOOR, not an equality — see the message. */
-const KNOWN_OWNERS = 8;
+const KNOWN_OWNERS = 7; // eight until S5 of INSTRUMENT_100X_PLAN retired E1 DeckReliefGl (2026-09-02)
 
 function walk(root: string): string[] {
   const out: string[] = [];
@@ -156,7 +156,7 @@ describe('the shadow bias baseline is declared by every component that owns a sh
     expect(FILES.length, 'walked no source files — every assertion below would be vacuous')
       .toBeGreaterThanOrEqual(100);
     /*
-     * A FLOOR OF 8: eight components own a shadow map today. Not an equality — a ninth is legitimate growth,
+     * A FLOOR OF 7: seven components own a shadow map today (eight before S5 retired E1). Not an equality — a ninth is legitimate growth,
      * and the loop below binds it to the same contract the day it appears. Fewer means the predicate has
      * stopped matching how these files are written, which is the failure that silently exempts everything.
      */
@@ -187,7 +187,7 @@ describe('the shadow bias baseline is declared by every component that owns a sh
     /* Asserted before the loop: if `shadowMapSizeFor` were ever renamed, this loop would iterate nothing and
        report success on eight unchecked components. */
     expect(scaledOwners.length,
-      `${scaledOwners.length} of ${OWNERS.length} shadow owners scale their map by tier; all eight do today.`
+      `${scaledOwners.length} of ${OWNERS.length} shadow owners scale their map by tier; all seven do today.`
       + ' A zero here means SCALED_SHADOW no longer matches, not that the app stopped scaling.')
       .toBeGreaterThanOrEqual(KNOWN_OWNERS);
 

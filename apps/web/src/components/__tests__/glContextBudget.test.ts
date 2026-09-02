@@ -14,8 +14,9 @@ import { dirname, join, relative, resolve } from 'node:path';
  * ── WHY A BREACH WOULD NOT LOOK LIKE A GRAPHICS BUG ─────────────────────────────────────
  * Browsers cap live WebGL contexts (commonly 8-16) and past the cap kill the OLDEST context
  * SILENTLY. Nothing throws. And on every route that draws a chart, the oldest context is the
- * shared one: `SignatureBackdrop` and every flat chart go through `sharedRenderer()`, which is
- * built on first paint, while the 3-D reliefs create theirs only when a reader clicks a toggle.
+ * shared one: every flat chart goes through `sharedRenderer()`, built when the first chart paints
+ * (until S5 the shell's `SignatureBackdrop` built it on every route), while the 3-D reliefs create
+ * theirs only when a reader clicks a toggle.
  * So the first casualty of a breach is not the newest relief — it is the ONE context every
  * chart on the page depends on, and the whole page of charts blanks at once. That reads as a
  * data bug, and it is the reason this file pins a number rather than describing an intention.
@@ -24,17 +25,17 @@ import { dirname, join, relative, resolve } from 'node:path';
  * Measured by walking the static AND dynamic import graph from every route in `router.tsx`,
  * UNIONED WITH the shell closure that wraps all of them (78 routes today):
  *
- *   · 70 routes reach exactly one: the shared context, from the shell's backdrop.
- *   · 7 routes reach two: that shared one, plus a single relief of their own.
+ *   · Routes with no chart of their own reach ZERO. From 2026-08-15 to S5 of INSTRUMENT_100X_PLAN
+ *     (2026-09-02) they reached one — the shared context built by the shell's `SignatureBackdrop`
+ *     on every route, the S0 instrument's "77 GL contexts at rest". That layer is removed (it drew
+ *     nothing in light and an empty plate in dark; docs/instrument/LEDGER.md §5), so the floor is
+ *     0 again and a context exists on a route only when one of its own charts builds it.
+ *   · Chart routes reach one: the shared context, from their own flat charts.
+ *   · Relief routes reach two: that shared one, plus a single relief of their own.
  *   · ONE route reaches three — `pages/CommandDeck.tsx`:
- *        1. the shared context, from `AppLayout`'s `SignatureBackdrop` around the `<Outlet>` —
- *           always mounted, created on first paint, and therefore the OLDEST, which is precisely
- *           the one a browser drops first when a page runs past the cap
- *
- *     NO ROUTE REACHES ZERO ANY MORE, and that is the change the backdrop made. The distribution
- *     used to read 63 / 14 / 1 with the backdrop mounted inside CommandDeck itself. Moving it into
- *     the shell did not add contexts to CommandDeck — it added one to the other 77 pages. The
- *     ceiling is unchanged at 3; what changed is that the floor is now 1 everywhere.
+ *        1. the shared context, from the deck's own flat charts (`useFlatChart`), built when the
+ *           first of them paints and therefore the OLDEST on the page — the one a browser drops
+ *           first when a page runs past the cap
  *        2. `DeckReliefGl`, via `<DeckRelief>` (CommandDeck.tsx:162), opt-in
  *        3. `SurfaceReliefGl`, via `<SurfaceRelief>` inside `LpOptimizerPanel`
  *           (CockpitPanels.tsx:501), opt-in
@@ -69,10 +70,20 @@ import { dirname, join, relative, resolve } from 'node:path';
 const SRC = resolve(process.cwd(), 'src');
 const ROUTER = join(SRC, 'router.tsx');
 
-/** The maximum number of simultaneously live WebGL contexts any single route can reach. */
-const CONCURRENT_CAP = 3;
-/** The route that is at the cap. Pinned so a NEW worst case shows up as a diff, not a tie. */
-const WORST_ROUTE = 'pages/CommandDeck.tsx';
+/**
+ * The maximum number of simultaneously live WebGL contexts any single route can reach.
+ * THREE until S5 of INSTRUMENT_100X_PLAN (2026-09-02): the shell's backdrop gave every route one context
+ * and CommandDeck held two reliefs (E1 + E5) on top. The backdrop is removed and E1 retired, so a route
+ * now holds at most ONE — its own relief, or the shared flat-chart context.
+ */
+const CONCURRENT_CAP = 1;
+/**
+ * How many routes sit AT the cap. With a cap of one, every chart route ties, so a single "worst route"
+ * name would be a coin toss over ROUTES order; the COUNT is the pin instead — an equality, so a new
+ * surface (or a lost one) shows up as a diff. `pages/CommandDeck.tsx` must remain among them: it is the
+ * route that was at three, and the one whose reduction S5 was measured on.
+ */
+const ROUTES_AT_CAP = 15; // six relief routes + nine flat-chart routes, measured 2026-09-02 after S5's removals
 
 /**
  * Routes with more JSX mount sites for one relief than can be live at once, with the reason.
@@ -208,9 +219,11 @@ interface RouteBudget {
 /*
  * ── THE SHELL IS A ROOT OF EVERY ROUTE, AND LEAVING IT OUT UNDERCOUNTED ALL 78 ─────────────
  * This census used to walk from route modules alone. That was right only while every GL surface
- * was inside a page. `AppLayout` now mounts `SignatureBackdrop` around the `<Outlet>`, so the
- * shared context is on screen for every route including the 63 that reach no GL of their own —
- * and a per-route walk cannot see it, because nothing in a page imports the shell that wraps it.
+ * was inside a page. From 2026-08-15 to S5 (2026-09-02) `AppLayout` mounted `SignatureBackdrop`
+ * around the `<Outlet>`, so the shared context was on screen for every route including the 63 that
+ * reached no GL of their own — and a per-route walk cannot see that, because nothing in a page
+ * imports the shell that wraps it. The shell walk stays after the backdrop's removal for the same
+ * reason in reverse: it is what PROVES the shell holds nothing.
  *
  * The failure that exposed it was silent in the right direction and therefore worth recording:
  * removing the now-dead `<SignatureBackdrop>` from CommandDeck dropped its count 3 -> 2 and the
@@ -280,7 +293,8 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
     expect(existsSync(SRC), `cannot find ${SRC}`).toBe(true);
     expect(existsSync(ROUTER), `cannot find ${ROUTER}`).toBe(true);
     expect(ROUTES.length, 'no routes parsed out of router.tsx').toBeGreaterThanOrEqual(70);
-    expect(OWNERS.length, 'no createStage call sites found in apps/web/src').toBeGreaterThanOrEqual(9);
+    /* Eight since S5 retired E1 `DeckReliefGl` (2026-09-02): six reliefs, ForgeBackdrop, renderMotion. */
+    expect(OWNERS.length, 'no createStage call sites found in apps/web/src').toBeGreaterThanOrEqual(8);
     expect(SHARED_USERS.length, 'no sharedRenderer call sites found — the flat chart path vanished')
       .toBeGreaterThanOrEqual(1);
     /* And it must be the hook that owns it. A second caller would mean a chart bypassing useFlatChart,
@@ -326,30 +340,38 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
     }
   });
 
-  it('the shell closure is real and carries the always-mounted context, or every count below is short by one', () => {
+  it('the shell closure is real and — since S5 — carries NO GL context of its own', () => {
     /*
      * The negative control for the SHELL walk. An empty or route-free closure would make this file
-     * silently revert to the per-route census that undercounted all 78, and every assertion below
-     * would still pass — which is how a guard stops measuring without ever going red.
+     * silently revert to the per-route census, and every assertion below would still pass — which
+     * is how a guard stops measuring without ever going red.
      */
     expect(SHELL.size, 'the shell closure is empty — router.tsx resolved no static imports')
       .toBeGreaterThan(3);
     for (const r of ROUTES) {
       expect(SHELL.has(r), `${id(r)} is a route and must not be inside the shell closure`).toBe(false);
     }
+    /*
+     * THE REAL CHANGE THIS ASSERTION USED TO ASK FOR. Until S5 of INSTRUMENT_100X_PLAN (2026-09-02)
+     * `AppLayout` mounted `SignatureBackdrop`, the shell's one caller of `sharedRenderer()`, so every
+     * route held the shared context whether or not it drew a chart — 77 GL contexts at rest, measured
+     * by the S0 instrument. That layer drew nothing in the default theme and an empty plate in dark
+     * (docs/instrument/LEDGER.md §5), and it is gone. The shell must now reach NO sharedRenderer
+     * caller: a context exists on a route only when one of its own charts builds it. If someone
+     * mounts a GL surface in the shell again, this goes red and they say why here.
+     */
     expect(SHARED_USERS.some((s) => SHELL.has(s)),
-      'the shell no longer reaches sharedRenderer(). If AppLayout genuinely stopped mounting a GL'
-      + ' backdrop that is a real change — say so here; if it still mounts one, this walk is broken')
-      .toBe(true);
-    /* And it must change an answer. If every route already had the shared context on its own, the
-       walk above would be decorative and could be deleted without a failure. */
-    const withoutShell = ROUTES.filter((r) => !SHARED_USERS.some((s) => reachable(r).has(s)));
-    expect(withoutShell.length,
-      'no route depends on the shell for its shared context — the SHELL union is doing nothing')
+      'the shell reaches sharedRenderer() again — a GL surface was mounted in AppLayout. S5 removed'
+      + ' the always-on backdrop for measured reasons; a new one must earn its place here, in words')
+      .toBe(false);
+    /* And the census must therefore show routes at ZERO — the reduction S5 was for. */
+    const atZero = ROUTES.filter((r) => !SHARED_USERS.some((s) => reachable(r).has(s)));
+    expect(atZero.length,
+      'no route reaches zero GL contexts — something in the shell or in every page still builds one')
       .toBeGreaterThan(0);
   });
 
-  it(`no route can hold more than ${CONCURRENT_CAP} live contexts, and ${WORST_ROUTE} is the one at the cap`, () => {
+  it(`no route can hold more than ${CONCURRENT_CAP} live context, and exactly ${ROUTES_AT_CAP} routes are at the cap`, () => {
     expect(BUDGETS.length).toBe(ROUTES.length);
     const worst = BUDGETS.reduce((a, b) => (b.concurrent > a.concurrent ? b : a));
     const describeRoute = (b: RouteBudget) =>
@@ -367,9 +389,13 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
     /* An EQUALITY, not a ceiling. If the worst case drops the pin is stale and should be
        lowered — a cap nobody is at has stopped measuring anything. */
     expect(worst.concurrent, `the worst route is now ${describeRoute(worst)}`).toBe(CONCURRENT_CAP);
-    expect(worst.route,
-      `${WORST_ROUTE} is no longer the route at the cap — ${describeRoute(worst)} is`)
-      .toBe(WORST_ROUTE);
+    const atCap = BUDGETS.filter((b) => b.concurrent === CONCURRENT_CAP).map((b) => b.route).sort();
+    expect(atCap.length,
+      `${atCap.length} routes are at the cap of ${CONCURRENT_CAP} (pinned ${ROUTES_AT_CAP}): ${atCap.join(', ')}.`
+      + ' A surface was added or lost — say which, and move the pin.')
+      .toBe(ROUTES_AT_CAP);
+    expect(atCap, 'CommandDeck no longer reaches a GL context at all — E5 SurfaceRelief left the deck?')
+      .toContain('pages/CommandDeck.tsx');
   });
 
   it('each relief has exactly one mount site per route, unless the exception says why not', () => {
@@ -393,8 +419,9 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
           .toBeLessThanOrEqual(cap);
       }
     }
+    /* Eight owner/route pairs since S5 retired E1 (2026-09-02). */
     expect(censused, 'no owner/route pairs were censused — the loop above proved nothing')
-      .toBeGreaterThanOrEqual(9);
+      .toBeGreaterThanOrEqual(8);
 
     /* AND EVERY EXCEPTION MUST STILL BE NEEDED. A stale entry is how an exemption list becomes
        the place unchecked mounts live. */

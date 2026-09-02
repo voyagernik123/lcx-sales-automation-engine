@@ -4,8 +4,8 @@ import { INSPECTOR_TO_OBJECT, OBJECT_TYPES, type ObjectType } from '../objectReg
 describe('object registry', () => {
   const types = Object.keys(OBJECT_TYPES) as ObjectType[];
 
-  it('defines all 11 object types of the ontology', () => {
-    expect(types).toHaveLength(11);
+  it('defines all 18 object types of the ontology (11 sales/regulatory + 7 from S5: gps and marketing)', () => {
+    expect(types).toHaveLength(18);
   });
 
   it('every type resolves to a workspace route — no dead entity names', () => {
@@ -16,7 +16,7 @@ describe('object registry', () => {
     }
   });
 
-  it('every type is L3-capable — the inspector is generalized to all 11', () => {
+  it('every type is L3-capable — the inspector is generalized to all 18', () => {
     for (const t of types) {
       expect(OBJECT_TYPES[t].inspector, `${t} must have an inspector payload`).toBeDefined();
     }

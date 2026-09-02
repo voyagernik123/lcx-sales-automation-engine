@@ -494,7 +494,7 @@ describe('no relief renderer lists its data in the effect that builds the GL con
        dataset at all and therefore passes the rule by having nothing to violate it with. */
     expect(existsSync(COMPONENTS), `cannot find ${COMPONENTS}`).toBe(true);
     expect(OWNERS.length, 'no createStage call sites found under src/components')
-      .toBeGreaterThanOrEqual(8);
+      .toBeGreaterThanOrEqual(7);
     for (const o of OWNERS) {
       expect(o.propsName, `${o.id} calls createStage but no props interface could be parsed for it`).not.toBeNull();
       expect(o.setupDeps,
@@ -506,7 +506,7 @@ describe('no relief renderer lists its data in the effect that builds the GL con
     const withData = OWNERS.filter((o) => o.dataProps.length > 0);
     expect(withData.length,
       `only ${withData.length} of ${OWNERS.length} context owners have a data prop — the classifier is broken`)
-      .toBeGreaterThanOrEqual(7);
+      .toBeGreaterThanOrEqual(6);
   });
 
   it('the derived roster covers every renderer the cost census drives', () => {
@@ -531,12 +531,12 @@ describe('no relief renderer lists its data in the effect that builds the GL con
           + ` If it is FIXED, delete its PENDING entry. Reason on record: ${pending.why}`
         : `${o.id} lists its data — [${listed.join(', ')}] — in the dependency array of the effect that calls`
           + ' createStage, so a data change disposes the stage and rebuilds the context, the programs, the'
-          + ' meshes and every target. Hoist the redraw into a ref the way DeckReliefGl.tsx:205-213 does and'
+          + ' meshes and every target. Hoist the redraw into a ref the way the six shipping reliefs do and'
           + ' leave only the size, the callbacks and the quality tier in this array.')
         .toEqual(allowed);
     }
     expect(checked, 'no context owner with a data prop was checked — the loop above proved nothing')
-      .toBeGreaterThanOrEqual(7);
+      .toBeGreaterThanOrEqual(6);
   });
 
   it('the redraw is synchronous — no renderer schedules a frame it does not draw', () => {
@@ -568,7 +568,7 @@ describe('no relief renderer lists its data in the effect that builds the GL con
           .toBe(false);
       }
     }
-    expect(checked, 'no data-carrying renderer was checked for schedulers').toBeGreaterThanOrEqual(7);
+    expect(checked, 'no data-carrying renderer was checked for schedulers').toBeGreaterThanOrEqual(6);
   });
 
   it('every PENDING entry is still a real, unfixed violation', () => {

@@ -11,7 +11,9 @@ import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
-import { RELATED_RESOLVERS, isResolvableType } from '../graph/links.js';
+import { capAtLeast } from '@lcx/shared';
+import { loadEntitlements } from '../access/entitlements.js';
+import { RELATED_RESOLVERS, isResolvableType, type ResolveContext } from '../graph/links.js';
 
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
 
@@ -77,7 +79,14 @@ graphRoutes.get('/:type/:id/related', requireOperator, async (c) => {
     return c.json({ error: 'Bad id', code: 'VALIDATION' }, 400);
   }
   try {
-    const groups = await RELATED_RESOLVERS[type]!(getPool(), id);
+    /*
+     * S5: the reader's entitlements travel into every resolver. The route itself has no workspace gate
+     * (it spans compartments — routeCompartmentCoverage declares it), so the compartment decision is made
+     * per GROUP, and a group the reader does not hold comes back WITHHELD rather than missing.
+     */
+    const ents = await loadEntitlements(getPool(), c.get('operator').id);
+    const ctx: ResolveContext = { holds: (ws) => capAtLeast(ents[ws], 'view') };
+    const groups = await RELATED_RESOLVERS[type]!(getPool(), id, ctx);
     const totalLinks = groups.reduce((n, g) => n + g.count, 0);
     return c.json({ data: { type, id, groups, totalLinks }, meta: meta() });
   } catch (err) {

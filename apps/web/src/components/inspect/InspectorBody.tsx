@@ -1,4 +1,7 @@
+import { lazy, Suspense } from 'react';
+import type React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { CardSkeleton } from '@/components/shared';
 import { useInspectorStore, type InspectorEntityType } from '@/stores/useInspectorStore';
 import { INSPECTOR_TO_OBJECT, OBJECT_TYPES } from '@/lib/objectRegistry';
 import { ProjectInspector } from './payloads/ProjectInspector';
@@ -14,6 +17,25 @@ import {
   SignalInspector,
   TaskInspector,
 } from './payloads/ExtendedInspectors';
+/*
+ * S5 · THE JOIN'S PAYLOADS ARE LAZY, AND THE BUDGET IS WHY. The eleven payloads above are static because
+ * they were already eager in the shell (see the note above). The seven gps/marketing payloads are NOT: each
+ * pulls its compartment's API client (gps.ts, gpsOrigination.ts, marketing.ts with its honesty ceiling) and
+ * a static import put +34 KB into the entry chunk — initial JS 820 → 854 of 850, largest chunk 417 → 452 of
+ * 440, caught by the perf-budget gate. A payload is opened by a click; its client loads with it.
+ */
+const pick = <K extends string>(load: () => Promise<Record<K, React.ComponentType<{ id: string; seed?: Record<string, unknown> }>>>, key: K) =>
+  lazy(() => load().then((m) => ({ default: m[key] })));
+const gps = () => import('./payloads/GpsInspectors');
+const marketing = () => import('./payloads/MarketingInspectors');
+const EngagementInspector = pick(gps, 'EngagementInspector');
+const ClientInspector = pick(gps, 'ClientInspector');
+const TargetInspector = pick(gps, 'TargetInspector');
+const PartnerInspector = pick(gps, 'PartnerInspector');
+const DraftInspector = pick(gps, 'DraftInspector');
+const HoldingInspector = pick(marketing, 'HoldingInspector');
+const AssetInspector = pick(marketing, 'AssetInspector');
+const Lazy = ({ children }: { children: React.ReactNode }) => <Suspense fallback={<CardSkeleton count={2} />}>{children}</Suspense>;
 import { RelatedPanel } from './RelatedPanel';
 
 /**
@@ -73,6 +95,21 @@ export function InspectorBody() {
         return <JurisdictionInspector id={top.id} seed={top.seed} />;
       case 'document':
         return <DocumentInspector id={top.id} seed={top.seed} />;
+      /* S5 · the join — gps and marketing objects, so no chip on the platform dead-ends. */
+      case 'engagement':
+        return <Lazy><EngagementInspector id={top.id} seed={top.seed} /></Lazy>;
+      case 'client':
+        return <Lazy><ClientInspector id={top.id} seed={top.seed} /></Lazy>;
+      case 'target':
+        return <Lazy><TargetInspector id={top.id} seed={top.seed} /></Lazy>;
+      case 'partner':
+        return <Lazy><PartnerInspector id={top.id} seed={top.seed} /></Lazy>;
+      case 'draft':
+        return <Lazy><DraftInspector id={top.id} seed={top.seed} /></Lazy>;
+      case 'holding':
+        return <Lazy><HoldingInspector id={top.id} seed={top.seed} /></Lazy>;
+      case 'asset':
+        return <Lazy><AssetInspector id={top.id} seed={top.seed} /></Lazy>;
     }
   })();
 

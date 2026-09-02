@@ -42,6 +42,7 @@
  * refused dataset never pays for the chunk that would have told it so.
  */
 import { lazy, Suspense, useCallback, useId, useMemo, useState } from 'react';
+import { ReliefWatchLine } from '@/components/shared/ReliefWatchLine';
 import { LeadTable, type LeadTableProps } from '@/components/bd/LeadTable';
 import { useReliefPreference } from '@/lib/reliefPreference';
 import {
@@ -251,6 +252,8 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
             one press away, and your choice is remembered.
           </span>
         )}
+        {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
+        <ReliefWatchLine />
       </div>
     </div>
   );

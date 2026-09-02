@@ -309,7 +309,6 @@ describe('every shipping component derives its tier rather than hard-coding the 
      workspace root of the project it is running, i.e. `apps/web`. */
   const ROOT = path.resolve(process.cwd(), 'src');
   const COMPONENTS = [
-    'components/geometry/DeckReliefGl.tsx',
     'components/geometry/SurfaceReliefGl.tsx',
     'components/geometry/PipelineReliefGl.tsx',
     'components/geometry/VaultReliefGl.tsx',
@@ -319,9 +318,10 @@ describe('every shipping component derives its tier rather than hard-coding the 
     'components/brand/ForgeBackdrop.tsx',
   ] as const;
 
-  it('reads all eight files', () => {
-    /* Named first, because a glob that matched nothing would make every assertion below vacuous. */
-    expect(COMPONENTS.length).toBe(8);
+  it('reads all seven files', () => {
+    /* Named first, because a glob that matched nothing would make every assertion below vacuous.
+       Eight until S5 of INSTRUMENT_100X_PLAN retired `DeckReliefGl` (2026-09-02). */
+    expect(COMPONENTS.length).toBe(7);
     for (const rel of COMPONENTS) {
       expect(readFileSync(path.join(ROOT, rel), 'utf8').length, rel).toBeGreaterThan(0);
     }

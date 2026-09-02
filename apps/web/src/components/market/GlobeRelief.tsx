@@ -44,6 +44,7 @@
  * the same scatter, carrying the same projects, with the refusal named to the reader rather than swallowed.
  */
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { ReliefWatchLine } from '@/components/shared/ReliefWatchLine';
 import type { MapPoint } from '@/lib/api/bd';
 import { useReliefPreference } from '@/lib/reliefPreference';
 
@@ -212,6 +213,8 @@ export function GlobeRelief({ points, children }: GlobeReliefProps) {
             Globe view unavailable — <code>{refusal}</code>. Every project in the scatter is unaffected.
           </span>
         )}
+        {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
+        <ReliefWatchLine />
       </div>
 
       <div ref={paneRef} className="min-h-0 flex-1">

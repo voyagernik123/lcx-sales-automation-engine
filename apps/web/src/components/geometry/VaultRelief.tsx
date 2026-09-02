@@ -39,6 +39,7 @@
  * here — to the same table, carrying the same records, with the refusal named to the reader rather than swallowed.
  */
 import { lazy, Suspense, useCallback, useId, useState, type ReactNode } from 'react';
+import { ReliefWatchLine } from '@/components/shared/ReliefWatchLine';
 import type { AuditEntry } from '@/lib/api/audit';
 import { useReliefPreference } from '@/lib/reliefPreference';
 
@@ -156,6 +157,8 @@ export function VaultRelief({ entries, children, heightPx = 460 }: VaultReliefPr
             Vault view unavailable — <code>{refusal}</code>. Every record below is unaffected.
           </span>
         )}
+        {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
+        <ReliefWatchLine />
       </div>
 
       {showRelief ? (

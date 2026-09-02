@@ -1,0 +1,6174 @@
+{
+  "totals": {
+    "head": "37fa9f6",
+    "runAt": "2026-09-02T00:43:40.721Z",
+    "frozenAt": "2026-09-21T07:18:41.000Z",
+    "routes": 79,
+    "glRoutes": 7,
+    "shellCarriesGl": false,
+    "ambient": 28,
+    "ambientBy": {
+      "animate-slide-in": 2,
+      "animate-pulse": 2,
+      "animate-spin": 24
+    },
+    "feelFiles": 6,
+    "timerCallSites": 11,
+    "clockReadCallSites": 93,
+    "continuityCallSites": 3,
+    "hexLiteralsOutsideTokens": 125,
+    "filesInUnion": 407,
+    "seam": [
+      {
+        "theme": "light",
+        "token": "--page-bg",
+        "dom": "#F4F7FC",
+        "glField": "page",
+        "gl": "#F4F7FC",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--card",
+        "dom": "#FFFFFF",
+        "glField": "plate",
+        "gl": "#FFFFFF",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--line",
+        "dom": "#B9C6E0",
+        "glField": "rule",
+        "gl": "#B9C6E0",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--page-bg",
+        "dom": "#F4F7FC",
+        "glField": "ground",
+        "gl": "#E8EDF6",
+        "deltaE": 2.81,
+        "designed": true
+      },
+      {
+        "theme": "dark",
+        "token": "--page-bg",
+        "dom": "#090E1B",
+        "glField": "page",
+        "gl": "#090E1B",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--card",
+        "dom": "#0E1628",
+        "glField": "plate",
+        "gl": "#0E1628",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--line",
+        "dom": "#26355A",
+        "glField": "rule",
+        "gl": "#26355A",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--page-bg",
+        "dom": "#090E1B",
+        "glField": "ground",
+        "gl": "#070B14",
+        "deltaE": 3.09,
+        "designed": true
+      }
+    ],
+    "seamMaxDeltaE": 0,
+    "runtime": {
+      "captured": 79,
+      "reachedBothThemes": 79,
+      "themeAppliedCorrectly": 79,
+      "routesWithContinuity": 76,
+      "routesWithMotionAtRest": 1,
+      "maxLiveIntervals": 2,
+      "routesWithRafLoop": 0,
+      "routesWithGlContext": 2,
+      "medianFiguresInViewport": 1,
+      "routesWithPageErrors": 0
+    }
+  },
+  "shell": {
+    "files": 66,
+    "ambient": 4,
+    "ambientBy": {
+      "animate-slide-in": 2,
+      "animate-pulse": 2
+    },
+    "feelFiles": 0,
+    "timers": 7,
+    "clockReads": 28,
+    "continuity": 1,
+    "hexLiterals": 0,
+    "gl": false,
+    "glFiles": []
+  },
+  "routes": [
+    {
+      "path": "/lcxos",
+      "probe": "/lcxos",
+      "module": null,
+      "seated": false,
+      "static": {
+        "files": 0,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 0,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 1,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)"
+          ],
+          "rafCalls": 0,
+          "gl": 0,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 21,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "lcxos-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 1,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)"
+          ],
+          "rafCalls": 0,
+          "gl": 0,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 21,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "lcxos-light.png"
+        }
+      }
+    },
+    {
+      "path": "/portal",
+      "probe": "/portal",
+      "module": null,
+      "seated": false,
+      "static": {
+        "files": 0,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 0,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 1,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)"
+          ],
+          "rafCalls": 0,
+          "gl": 0,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 0,
+          "textNodes": 3,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "portal-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 1,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)"
+          ],
+          "rafCalls": 0,
+          "gl": 0,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 0,
+          "textNodes": 3,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "portal-light.png"
+        }
+      }
+    },
+    {
+      "path": "/select",
+      "probe": "/select",
+      "module": "pages/SelectOperator",
+      "seated": false,
+      "static": {
+        "files": 5,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 0,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 5,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 11,
+          "gl": 1,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 0,
+          "textNodes": 8,
+          "canvases": 1,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "select-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 5,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 12,
+          "gl": 1,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 0,
+          "textNodes": 8,
+          "canvases": 1,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "select-light.png"
+        }
+      }
+    },
+    {
+      "path": "/regulatory-dashboard",
+      "probe": "/regulatory-dashboard",
+      "module": "pages/Dashboard",
+      "seated": true,
+      "static": {
+        "files": 31,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 23,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 63,
+          "textNodes": 212,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 21,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "regulatory_dashboard-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 63,
+          "textNodes": 212,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 21,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "regulatory_dashboard-light.png"
+        }
+      }
+    },
+    {
+      "path": "/ontology",
+      "probe": "/ontology",
+      "module": "pages/OntologyExplorer",
+      "seated": true,
+      "static": {
+        "files": 41,
+        "ambient": 1,
+        "ambientBy": {
+          "animate-spin": 1
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 55,
+        "gl": true,
+        "glFiles": [
+          "components/shared/ReliefWatchLine.tsx",
+          "components/geometry/OntologyOrreryGl.tsx",
+          "components/geometry/orrery/orreryLayout.ts"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 12,
+          "gl": 2,
+          "vt": 2,
+          "errors": [],
+          "animations": 3,
+          "figures": 17,
+          "textNodes": 75,
+          "canvases": 1,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "ontology-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 12,
+          "gl": 2,
+          "vt": 2,
+          "errors": [],
+          "animations": 3,
+          "figures": 17,
+          "textNodes": 75,
+          "canvases": 1,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "ontology-light.png"
+        }
+      }
+    },
+    {
+      "path": "/states",
+      "probe": "/states",
+      "module": "pages/StateMap",
+      "seated": true,
+      "static": {
+        "files": 28,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 54,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "states-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 54,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "states-light.png"
+        }
+      }
+    },
+    {
+      "path": "/products",
+      "probe": "/products",
+      "module": "pages/ProductMatrix",
+      "seated": true,
+      "static": {
+        "files": 32,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 25,
+          "textNodes": 107,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "products-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 25,
+          "textNodes": 107,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "products-light.png"
+        }
+      }
+    },
+    {
+      "path": "/simulator",
+      "probe": "/simulator",
+      "module": "pages/Simulator",
+      "seated": true,
+      "static": {
+        "files": 32,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 21,
+          "textNodes": 149,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "simulator-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 21,
+          "textNodes": 149,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "simulator-light.png"
+        }
+      }
+    },
+    {
+      "path": "/howey",
+      "probe": "/howey",
+      "module": "pages/HoweyCalculator",
+      "seated": true,
+      "static": {
+        "files": 28,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 3,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 20,
+          "textNodes": 71,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "howey-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 20,
+          "textNodes": 71,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "howey-light.png"
+        }
+      }
+    },
+    {
+      "path": "/scenario",
+      "probe": "/scenario",
+      "module": "pages/ScenarioPlanner",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 19,
+          "textNodes": 90,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "scenario-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 19,
+          "textNodes": 90,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "scenario-light.png"
+        }
+      }
+    },
+    {
+      "path": "/readiness",
+      "probe": "/readiness",
+      "module": "pages/ReadinessStack",
+      "seated": true,
+      "static": {
+        "files": 19,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 21,
+          "textNodes": 109,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "readiness-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 21,
+          "textNodes": 109,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "readiness-light.png"
+        }
+      }
+    },
+    {
+      "path": "/brief-generator",
+      "probe": "/brief-generator",
+      "module": "pages/BriefGenerator",
+      "seated": true,
+      "static": {
+        "files": 34,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 30,
+          "textNodes": 171,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "brief_generator-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 30,
+          "textNodes": 171,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "brief_generator-light.png"
+        }
+      }
+    },
+    {
+      "path": "/capital-estimator",
+      "probe": "/capital-estimator",
+      "module": "pages/CapitalEstimator",
+      "seated": true,
+      "static": {
+        "files": 30,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 18,
+          "textNodes": 140,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "capital_estimator-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 18,
+          "textNodes": 140,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "capital_estimator-light.png"
+        }
+      }
+    },
+    {
+      "path": "/roadmap",
+      "probe": "/roadmap",
+      "module": "pages/Roadmap",
+      "seated": true,
+      "static": {
+        "files": 16,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 1,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 25,
+          "textNodes": 95,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "roadmap-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 25,
+          "textNodes": 95,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "roadmap-light.png"
+        }
+      }
+    },
+    {
+      "path": "/red-flags",
+      "probe": "/red-flags",
+      "module": "pages/RedFlags",
+      "seated": true,
+      "static": {
+        "files": 28,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 17,
+          "textNodes": 89,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "red_flags-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 17,
+          "textNodes": 89,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "red_flags-light.png"
+        }
+      }
+    },
+    {
+      "path": "/settings",
+      "probe": "/settings",
+      "module": "pages/Settings",
+      "seated": true,
+      "static": {
+        "files": 20,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 1,
+        "timers": 2,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 3,
+          "textNodes": 62,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "settings-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 3,
+          "textNodes": 62,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "settings-light.png"
+        }
+      }
+    },
+    {
+      "path": "/competition",
+      "probe": "/competition",
+      "module": "pages/CompetitionAnalysis",
+      "seated": true,
+      "static": {
+        "files": 30,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 7,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 30,
+          "textNodes": 94,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "competition-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 30,
+          "textNodes": 94,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "competition-light.png"
+        }
+      }
+    },
+    {
+      "path": "/product-intel",
+      "probe": "/product-intel",
+      "module": "pages/ProductIntelligence",
+      "seated": true,
+      "static": {
+        "files": 30,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 25,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 86,
+          "textNodes": 279,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "product_intel-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 86,
+          "textNodes": 279,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "product_intel-light.png"
+        }
+      }
+    },
+    {
+      "path": "/bd-pipeline",
+      "probe": "/bd-pipeline",
+      "module": "pages/BdPipeline",
+      "seated": true,
+      "static": {
+        "files": 33,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 17,
+        "continuity": 1,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "components/geometry/PipelineRelief.tsx",
+          "components/shared/ReliefWatchLine.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 12,
+          "textNodes": 77,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_pipeline-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 12,
+          "textNodes": 77,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_pipeline-light.png"
+        }
+      }
+    },
+    {
+      "path": "/bd-pipeline/:id",
+      "probe": "/bd-pipeline/probe",
+      "module": "pages/LeadDetail",
+      "seated": true,
+      "static": {
+        "files": 31,
+        "ambient": 4,
+        "ambientBy": {
+          "animate-spin": 4
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 2,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_pipeline_probe-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_pipeline_probe-light.png"
+        }
+      }
+    },
+    {
+      "path": "/contacts/:id",
+      "probe": "/contacts/probe",
+      "module": "pages/ContactWorkspace",
+      "seated": true,
+      "static": {
+        "files": 24,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 3,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "contacts_probe-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "contacts_probe-light.png"
+        }
+      }
+    },
+    {
+      "path": "/claim-library",
+      "probe": "/claim-library",
+      "module": "pages/ClaimLibrary",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 40,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "claim_library-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 40,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "claim_library-light.png"
+        }
+      }
+    },
+    {
+      "path": "/outreach",
+      "probe": "/outreach",
+      "module": "pages/Handoffs",
+      "seated": true,
+      "static": {
+        "files": 19,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 48,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "outreach-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 48,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "outreach-light.png"
+        }
+      }
+    },
+    {
+      "path": "/send-queue",
+      "probe": "/send-queue",
+      "module": "pages/SendQueue",
+      "seated": true,
+      "static": {
+        "files": 18,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "send_queue-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "send_queue-light.png"
+        }
+      }
+    },
+    {
+      "path": "/exchange-gaps",
+      "probe": "/exchange-gaps",
+      "module": "pages/ExchangeGaps",
+      "seated": true,
+      "static": {
+        "files": 24,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 2,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 46,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "exchange_gaps-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 46,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "exchange_gaps-light.png"
+        }
+      }
+    },
+    {
+      "path": "/deal-board",
+      "probe": "/deal-board",
+      "module": "pages/DealBoard",
+      "seated": true,
+      "static": {
+        "files": 31,
+        "ambient": 1,
+        "ambientBy": {
+          "animate-spin": 1
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 5,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "surfaces/sales/renderMotion.ts"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 8,
+          "textNodes": 59,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "deal_board-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 8,
+          "textNodes": 59,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "deal_board-light.png"
+        }
+      }
+    },
+    {
+      "path": "/tasks",
+      "probe": "/tasks",
+      "module": "pages/MyTasks",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "tasks-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "tasks-light.png"
+        }
+      }
+    },
+    {
+      "path": "/market-map",
+      "probe": "/market-map",
+      "module": "pages/MarketMap",
+      "seated": true,
+      "static": {
+        "files": 22,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "components/market/GlobeRelief.tsx",
+          "components/shared/ReliefWatchLine.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "market_map-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "market_map-light.png"
+        }
+      }
+    },
+    {
+      "path": "/graph",
+      "probe": "/graph",
+      "module": "pages/SalesGraph",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 1,
+        "ambientBy": {
+          "animate-spin": 1
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 12,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 12,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "graph-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 12,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "graph-light.png"
+        }
+      }
+    },
+    {
+      "path": "/monitors",
+      "probe": "/monitors",
+      "module": "pages/Monitors",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 4,
+        "ambientBy": {
+          "animate-spin": 4
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 50,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "monitors-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 50,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "monitors-light.png"
+        }
+      }
+    },
+    {
+      "path": "/targets",
+      "probe": "/targets",
+      "module": "pages/Targets",
+      "seated": true,
+      "static": {
+        "files": 19,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "targets-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "targets-light.png"
+        }
+      }
+    },
+    {
+      "path": "/brief",
+      "probe": "/brief",
+      "module": "pages/DailyBrief",
+      "seated": true,
+      "static": {
+        "files": 16,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "brief-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "brief-light.png"
+        }
+      }
+    },
+    {
+      "path": "/forecast",
+      "probe": "/forecast",
+      "module": "pages/Forecast",
+      "seated": true,
+      "static": {
+        "files": 19,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "forecast-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "forecast-light.png"
+        }
+      }
+    },
+    {
+      "path": "/command",
+      "probe": "/command",
+      "module": "pages/CommandCenter",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command-light.png"
+        }
+      }
+    },
+    {
+      "path": "/scorecard",
+      "probe": "/scorecard",
+      "module": "pages/Scorecard",
+      "seated": true,
+      "static": {
+        "files": 14,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "scorecard-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "scorecard-light.png"
+        }
+      }
+    },
+    {
+      "path": "/coverage/:id",
+      "probe": "/coverage/probe",
+      "module": "pages/CoverageReport",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "coverage_probe-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "coverage_probe-light.png"
+        }
+      }
+    },
+    {
+      "path": "/customer/:id",
+      "probe": "/customer/probe",
+      "module": "pages/Customer360",
+      "seated": true,
+      "static": {
+        "files": 28,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 1,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "customer_probe-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "customer_probe-light.png"
+        }
+      }
+    },
+    {
+      "path": "/notes",
+      "probe": "/notes",
+      "module": "pages/Notes",
+      "seated": true,
+      "static": {
+        "files": 20,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "notes-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "notes-light.png"
+        }
+      }
+    },
+    {
+      "path": "/notes/:projectId",
+      "probe": "/notes/probe",
+      "module": "pages/Notes",
+      "seated": true,
+      "static": {
+        "files": 20,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "notes_probe-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "notes_probe-light.png"
+        }
+      }
+    },
+    {
+      "path": "/win-loss",
+      "probe": "/win-loss",
+      "module": "pages/WinLoss",
+      "seated": true,
+      "static": {
+        "files": 38,
+        "ambient": 1,
+        "ambientBy": {
+          "animate-spin": 1
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "win_loss-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "win_loss-light.png"
+        }
+      }
+    },
+    {
+      "path": "/ai-tools",
+      "probe": "/ai-tools",
+      "module": "pages/AiTools",
+      "seated": true,
+      "static": {
+        "files": 22,
+        "ambient": 1,
+        "ambientBy": {
+          "animate-spin": 1
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 53,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "ai_tools-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 53,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 19,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "ai_tools-light.png"
+        }
+      }
+    },
+    {
+      "path": "/outreach-ops",
+      "probe": "/outreach-ops",
+      "module": "pages/OutreachOps",
+      "seated": true,
+      "static": {
+        "files": 34,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "outreach_ops-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "outreach_ops-light.png"
+        }
+      }
+    },
+    {
+      "path": "/deal-desk",
+      "probe": "/deal-desk",
+      "module": "pages/DealDesk",
+      "seated": true,
+      "static": {
+        "files": 33,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 4,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 4,
+          "textNodes": 73,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "deal_desk-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 4,
+          "textNodes": 73,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "deal_desk-light.png"
+        }
+      }
+    },
+    {
+      "path": "/integrations",
+      "probe": "/integrations",
+      "module": "pages/Integrations",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 77,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "integrations-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 77,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "integrations-light.png"
+        }
+      }
+    },
+    {
+      "path": "/board-report",
+      "probe": "/board-report",
+      "module": "pages/BoardReport",
+      "seated": true,
+      "static": {
+        "files": 40,
+        "ambient": 1,
+        "ambientBy": {
+          "animate-spin": 1
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 45,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "board_report-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 45,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "board_report-light.png"
+        }
+      }
+    },
+    {
+      "path": "/market-news",
+      "probe": "/market-news",
+      "module": "pages/MarketNews",
+      "seated": true,
+      "static": {
+        "files": 24,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "market_news-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "market_news-light.png"
+        }
+      }
+    },
+    {
+      "path": "/report-builder",
+      "probe": "/report-builder",
+      "module": "pages/ReportBuilder",
+      "seated": true,
+      "static": {
+        "files": 30,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "report_builder-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 49,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "report_builder-light.png"
+        }
+      }
+    },
+    {
+      "path": "/bd-kpis",
+      "probe": "/bd-kpis",
+      "module": "pages/KpiDashboard",
+      "seated": true,
+      "static": {
+        "files": 50,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 1,
+        "timers": 3,
+        "clockReads": 4,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 46,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_kpis-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 46,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_kpis-light.png"
+        }
+      }
+    },
+    {
+      "path": "/audit-log",
+      "probe": "/audit-log",
+      "module": "pages/AuditLog",
+      "seated": true,
+      "static": {
+        "files": 20,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "components/geometry/VaultRelief.tsx",
+          "components/shared/ReliefWatchLine.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 38,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "audit_log-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 38,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "audit_log-light.png"
+        }
+      }
+    },
+    {
+      "path": "/ops",
+      "probe": "/ops",
+      "module": "pages/Ops",
+      "seated": true,
+      "static": {
+        "files": 19,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 40,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "ops-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 40,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "ops-light.png"
+        }
+      }
+    },
+    {
+      "path": "/wbr",
+      "probe": "/wbr",
+      "module": "pages/Wbr",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 39,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "wbr-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 39,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "wbr-light.png"
+        }
+      }
+    },
+    {
+      "path": "/readout",
+      "probe": "/readout",
+      "module": "pages/Readout",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 4,
+          "textNodes": 46,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "readout-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 4,
+          "textNodes": 46,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "readout-light.png"
+        }
+      }
+    },
+    {
+      "path": "/access",
+      "probe": "/access",
+      "module": "pages/AccessControl",
+      "seated": true,
+      "static": {
+        "files": 14,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 53,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "access-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 53,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "access-light.png"
+        }
+      }
+    },
+    {
+      "path": "/distribution",
+      "probe": "/distribution",
+      "module": "pages/DistributionCockpit",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 39,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 39,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution-light.png"
+        }
+      }
+    },
+    {
+      "path": "/distribution/atlas",
+      "probe": "/distribution/atlas",
+      "module": "pages/DistributionHome",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 41,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_atlas-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 41,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_atlas-light.png"
+        }
+      }
+    },
+    {
+      "path": "/distribution/listings",
+      "probe": "/distribution/listings",
+      "module": "pages/DistributionListings",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 41,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_listings-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 41,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_listings-light.png"
+        }
+      }
+    },
+    {
+      "path": "/distribution/campaigns",
+      "probe": "/distribution/campaigns",
+      "module": "pages/DistributionCampaigns",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 3,
+          "textNodes": 50,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_campaigns-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 3,
+          "textNodes": 50,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_campaigns-light.png"
+        }
+      }
+    },
+    {
+      "path": "/distribution/geo",
+      "probe": "/distribution/geo",
+      "module": "pages/DistributionGeo",
+      "seated": true,
+      "static": {
+        "files": 15,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 41,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_geo-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 41,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "distribution_geo-light.png"
+        }
+      }
+    },
+    {
+      "path": "/marketing",
+      "probe": "/marketing",
+      "module": "pages/Marketing",
+      "seated": true,
+      "static": {
+        "files": 27,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 48,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 48,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing-light.png"
+        }
+      }
+    },
+    {
+      "path": "/marketing/desk",
+      "probe": "/marketing/desk",
+      "module": "pages/MarketingDesk",
+      "seated": true,
+      "static": {
+        "files": 34,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_desk-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 47,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_desk-light.png"
+        }
+      }
+    },
+    {
+      "path": "/marketing/record",
+      "probe": "/marketing/record",
+      "module": "pages/MarketingRecord",
+      "seated": true,
+      "static": {
+        "files": 22,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 26,
+          "textNodes": 104,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_record-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 26,
+          "textNodes": 104,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_record-light.png"
+        }
+      }
+    },
+    {
+      "path": "/marketing/crisis",
+      "probe": "/marketing/crisis",
+      "module": "pages/MarketingCrisis",
+      "seated": true,
+      "static": {
+        "files": 25,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 9,
+        "continuity": 0,
+        "hexLiterals": 2,
+        "gl": true,
+        "glFiles": [
+          "components/risk/StormRelief.tsx",
+          "components/shared/ReliefWatchLine.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 4,
+          "textNodes": 77,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_crisis-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 4,
+          "textNodes": 77,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_crisis-light.png"
+        }
+      }
+    },
+    {
+      "path": "/marketing/holdings",
+      "probe": "/marketing/holdings",
+      "module": "pages/MarketingHoldings",
+      "seated": true,
+      "static": {
+        "files": 16,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 56,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_holdings-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 56,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing_holdings-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps",
+      "probe": "/gps",
+      "module": "pages/Gps",
+      "seated": true,
+      "static": {
+        "files": 26,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 2,
+        "timers": 2,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 5,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 10,
+          "textNodes": 69,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 10,
+          "textNodes": 69,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/book",
+      "probe": "/gps/book",
+      "module": "pages/GpsBook",
+      "seated": true,
+      "static": {
+        "files": 21,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 44,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_book-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 44,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_book-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/underwriting",
+      "probe": "/gps/underwriting",
+      "module": "pages/GpsUnderwriting",
+      "seated": true,
+      "static": {
+        "files": 30,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 2,
+        "timers": 2,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 3,
+          "textNodes": 66,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_underwriting-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 3,
+          "textNodes": 66,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_underwriting-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/origination",
+      "probe": "/gps/origination",
+      "module": "pages/GpsOrigination",
+      "seated": true,
+      "static": {
+        "files": 23,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 48,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_origination-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 48,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_origination-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/conflict",
+      "probe": "/gps/conflict",
+      "module": "pages/GpsConflict",
+      "seated": true,
+      "static": {
+        "files": 21,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 7,
+          "textNodes": 92,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_conflict-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 7,
+          "textNodes": 92,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_conflict-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/delivery",
+      "probe": "/gps/delivery",
+      "module": "pages/GpsDelivery",
+      "seated": true,
+      "static": {
+        "files": 29,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 2,
+        "continuity": 0,
+        "hexLiterals": 5,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 40,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_delivery-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 40,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_delivery-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/loop",
+      "probe": "/gps/loop",
+      "module": "pages/GpsLoop",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_loop-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 43,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_loop-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/inputs",
+      "probe": "/gps/inputs",
+      "module": "pages/GpsInputs",
+      "seated": true,
+      "static": {
+        "files": 18,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 45,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_inputs-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 45,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 13,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_inputs-light.png"
+        }
+      }
+    },
+    {
+      "path": "/gps/partner-registry",
+      "probe": "/gps/partner-registry",
+      "module": "pages/GpsPartnerRegistry",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 44,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_partner_registry-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 44,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "gps_partner_registry-light.png"
+        }
+      }
+    },
+    {
+      "path": "/governance/controls",
+      "probe": "/governance/controls",
+      "module": "pages/ControlRegister",
+      "seated": true,
+      "static": {
+        "files": 16,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 56,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "governance_controls-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 56,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "governance_controls-light.png"
+        }
+      }
+    },
+    {
+      "path": "/decisions",
+      "probe": "/decisions",
+      "module": "pages/Decisions",
+      "seated": true,
+      "static": {
+        "files": 14,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "decisions-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 42,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "decisions-light.png"
+        }
+      }
+    },
+    {
+      "path": "/command-deck",
+      "probe": "/command-deck",
+      "module": "pages/CommandDeck",
+      "seated": true,
+      "static": {
+        "files": 29,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 1,
+        "timers": 2,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "components/geometry/SurfaceRelief.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 37,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_deck-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 37,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_deck-light.png"
+        }
+      }
+    },
+    {
+      "path": "/command-partners",
+      "probe": "/command-partners",
+      "module": "pages/CommandPartners",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 36,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_partners-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 2,
+          "textNodes": 36,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_partners-light.png"
+        }
+      }
+    },
+    {
+      "path": "/command-ops",
+      "probe": "/command-ops",
+      "module": "pages/CommandOps",
+      "seated": true,
+      "static": {
+        "files": 16,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 36,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_ops-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 36,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_ops-light.png"
+        }
+      }
+    },
+    {
+      "path": "/cheat-card",
+      "probe": "/cheat-card",
+      "module": "pages/CheatCard",
+      "seated": true,
+      "static": {
+        "files": 16,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 25,
+          "textNodes": 174,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "cheat_card-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 25,
+          "textNodes": 174,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "cheat_card-light.png"
+        }
+      }
+    },
+    {
+      "path": "/practice",
+      "probe": "/practice",
+      "module": "pages/PracticeRange",
+      "seated": true,
+      "static": {
+        "files": 7,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 0,
+        "clockReads": 4,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 76,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "practice-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 76,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 15,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "practice-light.png"
+        }
+      }
+    }
+  ]
+}

@@ -20,7 +20,16 @@ export type InspectorEntityType =
   | 'listing'
   | 'decision'
   | 'jurisdiction'
-  | 'document';
+  | 'document'
+  // S5 of INSTRUMENT_100X_PLAN (2026-09-02): the join reaches the compartments that carry the money and
+  // the liability. Mirrors the API's InspectorType; oneFloor.test.ts pins the two identical.
+  | 'engagement'
+  | 'target'
+  | 'partner'
+  | 'client'
+  | 'draft'
+  | 'holding'
+  | 'asset';
 
 export interface InspectorTarget {
   type: InspectorEntityType;

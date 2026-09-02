@@ -5,7 +5,7 @@
  *
  * ── WHY CHUNK-LEVEL ATTRIBUTION GIVES THE WRONG ANSWER, MEASURED ────────────────────
  * The obvious method is to list the chunks a route pulls and add up their bytes. It reports this
- * migration as a REGRESSION. Vite places `useFlatChart.ts` and `SignatureBackdrop.tsx` in the same
+ * migration as a REGRESSION. Vite placed `useFlatChart.ts` and `SignatureBackdrop.tsx` (removed in S5) in the same
  * entry chunk, so while either one still reached the barrel, every byte the other pulled was
  * attributed to both lanes. A number that moves when an unrelated file changes is not measuring the
  * lane.
@@ -102,7 +102,9 @@ function closureFor(ownerFragment) {
 const LANES = [
   ['flat charts', 'components/charts/gl/'],
   ['sign-in shell', 'components/brand/ForgeBackdrop'],
-  ['ambient backdrop', 'components/command/SignatureBackdrop'],
+  // 'ambient backdrop' (components/command/SignatureBackdrop) was a lane until S5 of
+  // INSTRUMENT_100X_PLAN removed the layer (2026-09-02); a lane for a module that does not exist
+  // would report 0 chunks and read as a saving.
 ];
 
 console.log('\n  GL CLOSURE PER LANE — chunks reached, and their bytes\n');

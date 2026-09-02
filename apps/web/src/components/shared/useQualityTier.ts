@@ -66,10 +66,11 @@ import type { QualityTier } from '@lcx/gl/env/quality.js';
 type PickQualityTier = typeof import('@lcx/gl/env/quality.js')['pickQualityTier'];
 
 /**
- * 60 Hz. Two of the eight surfaces have frames after their first — `ForgeBackdrop`'s five-second arc and
- * `DeckReliefGl`'s focus rack — so a frame budget is literally a frame budget there. For the six that render
- * once and stop it is a LATENCY budget: 16.6 ms is the longest single main-thread block that does not read
- * as a stall, which is the same number for a different reason.
+ * 60 Hz. One of the seven surfaces has frames after its first — `ForgeBackdrop`'s five-second arc (the
+ * other was `DeckReliefGl`'s focus rack, retired in S5 of INSTRUMENT_100X_PLAN) — so a frame budget is
+ * literally a frame budget there. For the six that render once and stop it is a LATENCY budget: 16.6 ms is
+ * the longest single main-thread block that does not read as a stall, which is the same number for a
+ * different reason.
  */
 const BUDGET_MS = 16.6;
 

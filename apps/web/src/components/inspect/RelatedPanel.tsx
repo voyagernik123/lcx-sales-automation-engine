@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Share2 } from 'lucide-react';
+import { Lock, Share2 } from 'lucide-react';
 import { fetchRelated, type RelatedGroup } from '@/lib/api/graph';
 import { useInspectorStore, type InspectorEntityType } from '@/stores/useInspectorStore';
 import { OBJECT_TYPES, INSPECTOR_TO_OBJECT } from '@/lib/objectRegistry';
@@ -14,6 +14,11 @@ import { OBJECT_TYPES, INSPECTOR_TO_OBJECT } from '@/lib/objectRegistry';
  *
  * Mounted once in InspectorHost, so every inspector gets it for free. Renders
  * nothing when the object has no navigable links (or the type has no resolver).
+ *
+ * S5 (INSTRUMENT_100X_PLAN): a group in a compartment the reader does not hold arrives WITHHELD —
+ * count 0, no items, the compartment named. It is rendered as a locked line, not dropped: a drawer
+ * that showed a smaller world as if it were the whole one would be need-to-know made invisible,
+ * and the point of the constitution is that it is visible.
  */
 export function RelatedPanel({ type, id, label }: { type: InspectorEntityType; id: string; label?: string }) {
   const push = useInspectorStore((s) => s.push);
@@ -59,6 +64,15 @@ export function RelatedPanel({ type, id, label }: { type: InspectorEntityType; i
           const def = OBJECT_TYPES[INSPECTOR_TO_OBJECT[g.inspector]];
           const Icon = def.icon;
           const extra = g.count - g.items.length;
+          if (g.withheld) {
+            return (
+              <div key={g.key} className="flex items-center gap-1.5 text-label text-grey" data-testid={`related-withheld-${g.key}`}>
+                <Lock size={11} aria-hidden="true" />
+                <span className="font-semibold">{g.label}</span>
+                <span>· in the {g.withheld} compartment, which you do not hold</span>
+              </div>
+            );
+          }
           return (
             <div key={g.key}>
               <div className="mb-1 flex items-center gap-1.5 text-label text-grey-dark">
