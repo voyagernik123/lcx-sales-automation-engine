@@ -77,15 +77,15 @@ JSON with `--json`.
 <!-- gl-budget:begin lanes -->
 | lane | allocated | measured | |
 |---|---|---|---|
-| L1 renderer | ≤ 45 KB raw | **12.6 KB** | ✓ |
+| L1 renderer | ≤ 45 KB raw | **12.9 KB** | ✓ |
 | L2 look | ≤ 10 KB raw | **6.9 KB** | ✓ |
 | L3 motion | ≤ 8 KB raw | **1.7 KB** | ✓ |
-| L4 env | ≤ 60 KB raw | **38.8 KB** | ✓ |
-| L3.5 particles | ≤ 11 KB raw | **10.8 KB** | ✓ |
-| L4.5 field | ≤ 13 KB raw | **8.8 KB** | ✓ |
-| **spine total** (all six lanes) | ≤ 147 KB raw | **79.5 KB** | 67.5 KB of the allocation unspent |
-| gate bundle — spine + this surface, tree-shaken | — | **23.7 KB** (24300 B) | what this lane actually ships |
-| three.js, same job, same settings (P0) | — | 513.3 KB | **6.5× the spine** |
+| L4 env | ≤ 60 KB raw | **39.0 KB** | ✓ |
+| L3.5 particles | ≤ 11 KB raw | **10.9 KB** | ✓ |
+| L4.5 field | ≤ 13 KB raw | **9.0 KB** | ✓ |
+| **spine total** (all six lanes) | ≤ 147 KB raw | **80.4 KB** | 66.6 KB of the allocation unspent |
+| gate bundle — spine + this surface, tree-shaken | — | **24.0 KB** (24567 B) | what this lane actually ships |
+| three.js, same job, same settings (P0) | — | 513.3 KB | **6.4× the spine** |
 <!-- gl-budget:end lanes -->
 
 That is what the audit of 2026-08-13 fixed. This table previously read **L1 10.4 / L2 5.3 /

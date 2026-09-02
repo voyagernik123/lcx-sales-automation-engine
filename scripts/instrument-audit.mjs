@@ -57,6 +57,16 @@ const ROUTE_FILTER = process.env.INSTRUMENT_ROUTES ? process.env.INSTRUMENT_ROUT
 /* S6: answer the eight desk landings' own endpoints with deterministic fixtures (see instrument-fixtures.mjs), so
    "figures in the first viewport" reads a POPULATED desk. Off by default — the no-API floor is the baseline. */
 const FIXTURES = process.env.INSTRUMENT_FIXTURES === '1';
+/* THE PRODUCTION (P0): VISIBILITY. Every route is captured twice per theme — as shipped, and with every GL layer forced
+   off (`window.__LCX_GL_OFF`, a real refusal in `createStage`, plus the relief preferences seeded off). The share of
+   viewport pixels that differ is `glCoverage`; the mean ΔE76 over those pixels is `glDelta`. Default ON; `=0` to skip. */
+const VISIBILITY = process.env.INSTRUMENT_VISIBILITY !== '0';
+const GALLERY_DIR = process.env.INSTRUMENT_GALLERY_DIR ?? join(ROOT, 'docs/vfx');
+const PHASE_LABEL = process.env.INSTRUMENT_PHASE_LABEL ?? '';
+/* S6's density captures seeded the relief preferences OFF so a desk's figure count was a property of its DOM layout.
+   THE PRODUCTION measures the platform AS SHIPPED, reliefs at their real default, so the shipped capture keeps the
+   preferences unless `INSTRUMENT_RELIEFS_OFF=1` asks for the S6 reading. The GL-off capture always seeds them off. */
+const RELIEFS_OFF = process.env.INSTRUMENT_RELIEFS_OFF === '1' || (FIXTURES && !VISIBILITY);
 
 const HEAD = execSync('git rev-parse --short HEAD', { cwd: ROOT }).toString().trim();
 const RUN_AT = new Date().toISOString();
@@ -395,7 +405,61 @@ const READ_PAGE = () => {
   };
 };
 
-async function captureRoute(browser, route, theme) {
+const glOffInit = () => { window.__LCX_GL_OFF = true; };
+
+/* THE LAB PAGE: two PNGs in, coverage + ΔE + two WebP thumbnails out. Runs in Chromium so it needs no decoder. */
+const LAB_MEASURE = async ({ on, off, thumbWidth }) => {
+  const load = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  const [a, b] = await Promise.all([load(on), load(off)]);
+  const W = Math.min(a.width, b.width), H = Math.min(a.height, b.height);
+  const draw = (img) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0); return x.getImageData(0, 0, W, H).data; };
+  const A = draw(a), B = draw(b);
+  // sRGB → Lab, for ΔE76 over the pixels that changed. Lightweight on purpose: this is a coverage instrument.
+  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const lab = (r, g, b2) => {
+    const R = lin(r), G = lin(g), Bl = lin(b2);
+    let X = (R * 0.4124 + G * 0.3576 + Bl * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + Bl * 0.0722, Z = (R * 0.0193 + G * 0.1192 + Bl * 0.9505) / 1.08883;
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    X = f(X); Y = f(Y); Z = f(Z);
+    return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+  };
+  let changed = 0, deSum = 0; const n = W * H;
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const d = Math.max(Math.abs(A[o] - B[o]), Math.abs(A[o + 1] - B[o + 1]), Math.abs(A[o + 2] - B[o + 2]));
+    if (d > 8) {
+      changed += 1;
+      const p = lab(A[o], A[o + 1], A[o + 2]), q = lab(B[o], B[o + 1], B[o + 2]);
+      deSum += Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    }
+  }
+  const thumb = (img) => { const c = document.createElement('canvas'); const s = thumbWidth / img.width; c.width = thumbWidth; c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); return c.toDataURL('image/webp', 0.72); };
+  return { coverage: changed / n, delta: changed ? deSum / changed : 0, width: W, height: H, thumbOn: thumb(a), thumbOff: thumb(b) };
+};
+
+async function measureVisibility(lab, pngOn, pngOff, thumbWidth = 400) {
+  const toUrl = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
+  return lab.evaluate(LAB_MEASURE, { on: toUrl(pngOn), off: toUrl(pngOff), thumbWidth });
+}
+
+/* THE CONTROLS. A synthetic page whose GL canvas covers a KNOWN 40% of the viewport must read 0.40 ± 0.01; the same
+   page with the canvas absent must read 0 against itself. A coverage instrument that has not been shown its own
+   floor and a known area is a number, not a measurement. */
+async function validateVisibilityMaths(browser) {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 1000 }, deviceScaleFactor: 1 });
+  const html = (withGl) => `<!doctype html><html><body style="margin:0;background:#ffffff">${withGl ? '<canvas id="c" width="800" height="500" style="display:block;width:800px;height:500px"></canvas><script>const g=document.getElementById("c").getContext("webgl2");g.clearColor(0.17,0.42,1,1);g.clear(g.COLOR_BUFFER_BIT);</script>' : '<div style="width:800px;height:500px"></div>'}</body></html>`;
+  await page.setContent(html(true)); await page.waitForTimeout(200); const on = await page.screenshot();
+  await page.setContent(html(false)); await page.waitForTimeout(200); const off = await page.screenshot();
+  const m = await measureVisibility(page, on, off, 100);
+  const same = await measureVisibility(page, off, off, 100);
+  await page.close();
+  const want = (800 * 500) / (1000 * 1000);
+  if (Math.abs(m.coverage - want) > 0.01) throw new Error(`visibility control: expected coverage ${want.toFixed(3)}, read ${m.coverage.toFixed(3)}`);
+  if (same.coverage !== 0) throw new Error(`visibility control: identical captures read ${same.coverage}, expected 0`);
+  console.log(`  visibility controls: known 40% area read ${(m.coverage * 100).toFixed(1)}% (ΔE ${m.delta.toFixed(1)}); identical captures 0%`);
+}
+
+async function captureRoute(browser, route, theme, glOff = false) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1, timezoneId: 'UTC', locale: 'en-GB',
     colorScheme: theme, reducedMotion: 'no-preference', contrast: 'no-preference', forcedColors: 'none',
@@ -405,7 +469,8 @@ async function captureRoute(browser, route, theme) {
   try {
     await page.addInitScript(FREEZE_ENV, { at: FROZEN_AT, seed: FROZEN_SEED });
     if (route.seated) await page.addInitScript(seatInit, SEAT);
-    if (FIXTURES && route.seated) await page.addInitScript(reliefsOffInit, SEAT);
+    if ((RELIEFS_OFF || glOff) && route.seated) await page.addInitScript(reliefsOffInit, SEAT);
+    if (glOff) await page.addInitScript(glOffInit);
     await page.addInitScript(themeSeed, { dark: theme === 'dark', scope: route.seated ? SEAT.email : 'anon' });
     await page.addInitScript(PROBE);
     await page.route('**/v1/**', (r) => r.abort('connectionrefused'));
@@ -479,10 +544,11 @@ async function captureRoute(browser, route, theme) {
     const read = await page.evaluate(READ_PAGE);
     mkdirSync(SHOTS, { recursive: true });
     const stem = `${route.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
-    let shot = null;
-    try { const png = await page.screenshot({ timeout: 15_000 }); writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } catch { /* a missing shot is reported as such */ }
+    let shot = null; let png = null;
+    try { png = await page.screenshot({ timeout: 15_000 }); if (!glOff) { writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } } catch { /* a missing shot is reported as such */ }
+    if (glOff) return { theme, reached, png, glOff: true };
     // `animations` = at rest (before the navigation); the post-return count travels beside it, never as the finding.
-    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, nav, pageErrors: errs.slice(0, 5), shot };
+    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, nav, pageErrors: errs.slice(0, 5), shot, png };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }
@@ -516,6 +582,8 @@ async function main() {
     server = startDevServer();
     await waitForServer(server.log);
     const browser = await chromium.launch({ headless: true });
+    const lab = VISIBILITY ? await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 }) : null;
+    if (VISIBILITY) await validateVisibilityMaths(browser);
     try {
       let i = 0;
       for (const r of routes) {
@@ -523,8 +591,22 @@ async function main() {
         process.stdout.write(`  [${i}/${routes.length}] ${r.probe}`);
         runtime[r.path] = {};
         for (const theme of ['dark', 'light']) {
-          runtime[r.path][theme] = await captureRoute(browser, r, theme);
-          process.stdout.write(` ${theme}:${runtime[r.path][theme].reached === 'REACHED' ? '✓' : '✗'}`);
+          const on = await captureRoute(browser, r, theme);
+          runtime[r.path][theme] = on;
+          process.stdout.write(` ${theme}:${on.reached === 'REACHED' ? '✓' : '✗'}`);
+          if (VISIBILITY && on.png && on.reached === 'REACHED') {
+            const off = await captureRoute(browser, r, theme, true);
+            if (off.png) {
+              const m = await measureVisibility(lab, on.png, off.png);
+              const stem = `${r.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
+              mkdirSync(join(GALLERY_DIR, 'gallery'), { recursive: true });
+              writeFileSync(join(GALLERY_DIR, 'gallery', `${stem}-on.webp`), Buffer.from(m.thumbOn.split(',')[1], 'base64'));
+              writeFileSync(join(GALLERY_DIR, 'gallery', `${stem}-off.webp`), Buffer.from(m.thumbOff.split(',')[1], 'base64'));
+              on.visibility = { coverage: Number(m.coverage.toFixed(4)), delta: Number(m.delta.toFixed(2)), thumbOn: `gallery/${stem}-on.webp`, thumbOff: `gallery/${stem}-off.webp` };
+              process.stdout.write(`(gl ${(m.coverage * 100).toFixed(0)}%)`);
+            }
+          }
+          delete on.png;
         }
         process.stdout.write('\n');
       }
@@ -558,6 +640,9 @@ async function main() {
       maxLiveIntervals: Math.max(0, ...rt.map((x) => x.dark?.intervals ?? 0)),
       routesWithRafLoop: rt.filter((x) => (x.dark?.rafPerSecond ?? 0) > 10).length,
       routesWithGlContext: rt.filter((x) => (x.dark?.gl ?? 0) > 0).length,
+      /* THE PRODUCTION's judge: routes where GL changes more than 5% of the viewport, and the median share. */
+      routesWithGlVisible: { dark: rt.filter((x) => (x.dark?.visibility?.coverage ?? 0) > 0.05).length, light: rt.filter((x) => (x.light?.visibility?.coverage ?? 0) > 0.05).length },
+      medianGlCoverage: { dark: median(rt.map((x) => x.dark?.visibility?.coverage ?? 0)), light: median(rt.map((x) => x.light?.visibility?.coverage ?? 0)) },
       medianFiguresInViewport: median(rt.map((x) => x.dark?.figures ?? 0)),
       routesWithPageErrors: rt.filter((x) => (x.dark?.pageErrors?.length ?? 0) > 0).length,
     },
@@ -566,6 +651,11 @@ async function main() {
   mkdirSync(SHOTS, { recursive: true });
   writeFileSync(join(OUT_DIR, 'BASELINE.json'), JSON.stringify({ totals, shell, routes: routes.map((r) => ({ path: r.path, probe: r.probe, module: r.module, seated: r.seated, static: r.static, runtime: runtime[r.path] ?? null })) }, null, 2));
   writeFileSync(join(OUT_DIR, 'BASELINE.md'), renderMd(totals, shell, routes, runtime));
+  if (VISIBILITY && !STATIC_ONLY) {
+    mkdirSync(GALLERY_DIR, { recursive: true });
+    writeFileSync(join(GALLERY_DIR, 'GALLERY.md'), renderGallery(totals, routes, runtime));
+    console.log(`  gallery: ${join(GALLERY_DIR, 'GALLERY.md')}`);
+  }
   writeFileSync(join(SHOTS, '.gitignore'), '*\n!.gitignore\n');
   console.log(`\n  written: ${join(OUT_DIR, 'BASELINE.md')} (HEAD ${HEAD})`);
 }
@@ -580,7 +670,7 @@ function renderMd(t, shell, routes, runtime) {
   }).join('\n');
   const seam = t.seam.map((s) => `| ${s.theme} | \`${s.token}\` ${s.dom ?? '?'} | \`${s.glField}\` ${s.gl ?? '?'} | **${s.deltaE ?? 'unparsed'}**${s.designed ? ' _(designed offset — reported, not scored)_' : ''} |`).join('\n');
   const rtBlock = t.runtime ? `
-## Runtime (both themes, ${t.fixtures ? 'DESK FIXTURES ON for the eight landings, relief preferences seeded OFF — density there is a property of the DOM LAYOUT, not the data; every other route no API' : 'no API'}, frozen clock ${t.frozenAt})
+## Runtime (both themes, ${t.fixtures ? `DESK FIXTURES ON for the eight landings${RELIEFS_OFF ? ', relief preferences seeded OFF — density there is a property of the DOM LAYOUT, not the data' : ', reliefs at their shipped defaults'}; every other route no API` : 'no API'}, frozen clock ${t.frozenAt})
 
 | | |
 |---|---|
@@ -592,6 +682,8 @@ function renderMd(t, shell, routes, runtime) {
 | max live \`setInterval\`s on one route | **${t.runtime.maxLiveIntervals}** |
 | routes running a rAF loop at rest (> 10 frames/s) | **${t.runtime.routesWithRafLoop}** |
 | routes that created a GL context | ${t.runtime.routesWithGlContext} |
+| routes where GL is VISIBLE (> 5% of viewport pixels change with GL off) — dark / light | **${t.runtime.routesWithGlVisible?.dark ?? '—'} / ${t.runtime.routesWithGlVisible?.light ?? '—'}** |
+| median GL coverage of the viewport — dark / light | **${((t.runtime.medianGlCoverage?.dark ?? 0) * 100).toFixed(1)}% / ${((t.runtime.medianGlCoverage?.light ?? 0) * 100).toFixed(1)}%** |
 | median numeric figures in the first viewport | ${t.runtime.medianFiguresInViewport} |${t.fixtures ? `\n\n**Desk figures in the first viewport (dark / light), fixtures on:** ${routes.filter((r) => DESK_ROUTES.has(r.path)).map((r) => `\`${r.path}\` ${runtime[r.path]?.dark?.figures ?? '—'} / ${runtime[r.path]?.light?.figures ?? '—'}`).join(' · ')}` : ''}
 | routes with page errors | ${t.runtime.routesWithPageErrors} |
 ` : '\n## Runtime\n\n_static-only run — no captures._\n';
@@ -630,6 +722,35 @@ ambient ${shell.ambient} · feel files ${shell.feelFiles} · timers ${shell.time
 |---|---|---|---|---|---|---|---|---|
 ${rows}
 `;
+}
+
+/* THE GALLERY — the pictures the owner judges by. Every route, both themes: as shipped beside GL forced off, with the
+   share of the viewport that the GL layers actually change. Regenerated every phase of THE PRODUCTION. */
+function renderGallery(t, routes, runtime) {
+  const pct = (v) => `${(v * 100).toFixed(0)}%`;
+  const section = (theme) => {
+    const rows = routes.map((r) => {
+      const v = runtime[r.path]?.[theme]?.visibility;
+      if (!v) return `| \`${r.path}\` | _not captured_ | | — | — |`;
+      return `| \`${r.path}\` | ![shipped](${v.thumbOn}) | ![GL off](${v.thumbOff}) | **${pct(v.coverage)}** | ${v.delta.toFixed(1)} |`;
+    });
+    return `### ${theme}\n\n| route | as shipped | GL forced off | GL coverage | mean ΔE76 |\n|---|---|---|---|---|\n${rows.join('\n')}\n`;
+  };
+  return `# THE PRODUCTION — GALLERY${PHASE_LABEL ? ` · ${PHASE_LABEL}` : ''}
+
+> HEAD \`${t.head}\` · run ${t.runAt} · ${t.routes} routes × 2 themes, captured as shipped and with every GL layer forced off
+> (\`window.__LCX_GL_OFF\` → \`createStage\` refuses \`FORCED_OFF_FOR_MEASUREMENT\`; relief preferences seeded off).
+> **GL coverage** = share of viewport pixels that differ between the two captures (any channel > 8/255). This is the
+> number that says whether the 3D is VISIBLE on a route. The controls: a known 40% GL area reads 40% ± 1; identical
+> captures read 0.
+
+| | dark | light |
+|---|---|---|
+| routes where GL is visible (coverage > 5%) | **${t.runtime.routesWithGlVisible?.dark ?? '—'}** of ${t.routes} | **${t.runtime.routesWithGlVisible?.light ?? '—'}** of ${t.routes} |
+| median GL coverage of the viewport | **${pct(t.runtime.medianGlCoverage?.dark ?? 0)}** | **${pct(t.runtime.medianGlCoverage?.light ?? 0)}** |
+
+${section('dark')}
+${section('light')}`;
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

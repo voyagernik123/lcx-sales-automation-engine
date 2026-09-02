@@ -35,6 +35,11 @@ export const STAGE_REFUSAL_CODES = [
      Nothing appears, nothing is reported to the page, and the effect looks like a density or a
      parameter problem rather than a binding one. Named here so a caller is told which it was. */
   'FEEDBACK_LOOP',
+  /* THE MEASUREMENT SWITCH (THE PRODUCTION, P0). `window.__LCX_GL_OFF === true` makes every context request refuse
+     with this code, so the instrument can capture a route twice — as shipped and with every GL layer off — and report
+     the share of pixels the GL actually changes. A refusal, not a hidden branch: the surface shows its honest flat
+     fallback and says why, exactly as it would for a lost context. Nothing in the app sets the flag. */
+  'FORCED_OFF_FOR_MEASUREMENT',
 ] as const;
 export type StageRefusalCode = (typeof STAGE_REFUSAL_CODES)[number];
 
@@ -74,6 +79,9 @@ const REFUSAL_REASON: Record<StageRefusalCode, string> = {
   FEEDBACK_LOOP:
     'A layer of this view was asked to read the surface it draws into, which every driver refuses, so ' +
     'the layer is not being drawn. This is a defect in the renderer, not in the data.',
+  FORCED_OFF_FOR_MEASUREMENT:
+    'The rendering was switched off by the measurement harness to capture this surface without it. ' +
+    'You are looking at the flat fallback on purpose; the data is unaffected.',
 };
 
 export function stageRefusal(code: StageRefusalCode, detail?: string): StageRefusal {
@@ -278,6 +286,7 @@ export function isStage(o: StageOutcome): o is Stage {
 }
 
 export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}): StageOutcome {
+  if ((globalThis as { __LCX_GL_OFF?: boolean }).__LCX_GL_OFF === true) return stageRefusal('FORCED_OFF_FOR_MEASUREMENT');
   const gl = canvas.getContext('webgl2', {
     antialias: opts.antialias ?? false,
     alpha: opts.alpha ?? false,
