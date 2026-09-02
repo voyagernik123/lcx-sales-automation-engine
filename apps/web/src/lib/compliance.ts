@@ -1,5 +1,5 @@
 import { State, Status, Phase, ReadinessStatus } from '@/types/ontology';
-import { states as allStates } from '@/data';
+import { states as allStates } from '@/data/states'; // direct, not the barrel — see Sidebar.tsx (P5 byte pre-step)
 
 export interface LegislativeFlags {
   clarityEnacted: boolean;

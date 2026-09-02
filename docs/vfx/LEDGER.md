@@ -40,8 +40,8 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P1 DARK FIRST + THE STAGE | DONE · **LIVE both surfaces** (Pages: `data-stage` in the entry; Render deployment 6219260694 `success`) | 08cfe3f | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
 | P2 THE CAMERA MOVES | **LIVE** | 530f0d9 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
 | P3 THE FIDELITY STACK | **LIVE** | 5c22d09 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
-| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **DESKTOP v0.4.0 PUBLISHED · WEB pushed (Render live; Pages build queued) · LIVE flip waits for PAGES LIVE** | 8cdf9aa · 3c29de8 · v0.4.0 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
-| P5 GPU CHARTS EVERYWHERE | PENDING | | | |
+| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **DESKTOP v0.4.0 PUBLISHED · WEB pushed (Render live; Pages build queued) · LIVE flip waits for PAGES LIVE** | 8cdf9aa · 3c29de8 · 0c0cd3a · v0.4.0 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
+| P5 GPU CHARTS EVERYWHERE | **IN PROGRESS (byte pre-step)** — P4 awaits Cloudflare Pages for its LIVE flip | — | | §4 bytes: competitors.ts 66 KB + states.ts 19 KB ride the shell via the `@/data` barrel from Sidebar, ExtendedInspectors, lib/compliance; move them out first (target shell ≤ 360 KB), then the 12 charts on the shared renderer |
 | P6 THE OBJECTS (glTF) | PENDING | | | |
 | P7 LIVENESS | PENDING | | | |
 | P8 HARDENING | PENDING | | | |
@@ -591,3 +591,23 @@ verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the 
   0.4.0 (adhoc signature, as every release before it). The web's LIVE flip still waits on Cloudflare Pages (queued since 14:11Z).
 - 2026-09-03 · **CI 33643251167 on 3c29de8: GREEN on both jobs** — the deck fix passes the keyboard-day spec in CI too (the
   8cdf9aa run's e2e red is closed by it). Cloudflare Pages check-runs for 8cdf9aa and 3c29de8 both still `in_progress`.
+- 2026-09-03 · **release(desktop) commit 0c0cd3a pushed** (Launch.tsx history bytes 4_371_024; the ledger's close-out). Web LIVE flip
+  still waits on Cloudflare Pages; the next verify-live targets 0c0cd3a (it carries every earlier P4 commit).
+- 2026-09-03 · **P5 STARTED (byte pre-step) while P4's web flip waits on Pages.** Shell attribution (sourcemap, 98%): the two
+  datasets and the inspector payload registry are the shell's weight, not the engine. Three shell files reach the barrel:
+  Sidebar.tsx, inspect/payloads/ExtendedInspectors.tsx, lib/compliance.ts. Step 1: import what they actually use directly,
+  so `competitors`/`states` fall out of the shell; measure with check-bundle; then the shared-renderer charts.
+- 2026-09-03 · **P5 STEP 1 MEASURED — the datasets leave the shell.** Three import lines (Sidebar `redFlags`, ExtendedInspectors
+  and lib/compliance `states`) now name their module instead of the `@/data` barrel. Shell chunk 448 → 360 KB (largest
+  352/440), initial JS 840 → 755/850, 211 lazy chunks — 85 KB out with no behaviour change; competitors.ts and the ontology
+  graph now load only on the routes that read them. The bundle checker's INITIAL_PREFIXES note remains a warning about a stale
+  list, not a failure. Gate → commit → push next; Pages will queue it behind P4's builds.
+- 2026-09-03 · **P5 census, re-derived (no script stood behind P0's "35").** Files outside components/charts whose inline <svg>
+  carries DATA-BOUND marks: 16 — StrategicMatrix 11 marks, FeasibilityMap 9, GpsUnderwriting 6, RiskCalendar 6, CockpitPanels 6
+  (the E1 gauge among them), SurfacePlot 4, MarketScatter 3, PartnerDossier 3, OntologyMiniMap 2, AnomalyDeviation 2,
+  PipelineSankey 2, GroupedColumnChart 2, ActivityStrip 2, Wbr 1, LoadingSkeleton 1, GapAnalysis 1. Of these, SurfacePlot,
+  RiskCalendar, MarketScatter and OntologyMiniMap are the heroes' flat twins BY DESIGN and stay; LoadingSkeleton encodes
+  nothing. P5's move list is the other eleven, onto ColumnChart / Sparkline / ControlBand / BarChartH where they encode data.
+  P0's 35 counted every non-icon <svg>; the number that matters is 11.
+- 2026-09-03 · verify-live 3c29de8: TIMEOUT pages=0 render=1 — Render carries 3c29de8 (and 0c0cd3a since 14:57Z); Pages still
+  serves the pre-P4 shell. The watcher re-verifies 0c0cd3a the moment Pages serves a new shell (≤ 2 h), else names the dashboard.

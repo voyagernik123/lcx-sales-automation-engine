@@ -5,7 +5,9 @@ import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Rad
 import { useUIStore, useAuditStore } from '@/stores';
 import { useAccessStore, useMyWorkspaces } from '@/stores/useAccessStore';
 import type { WorkspaceId } from '@lcx/shared';
-import { redFlags } from '@/data';
+// Import the ONE dataset this file reads, not the barrel: `@/data` re-exports competitors.ts (78 KB) and states.ts (22 KB),
+// and this import alone was carrying both into the shell chunk (P5 byte pre-step, measured by sourcemap attribution).
+import { redFlags } from '@/data/redFlags';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
 import { clsx } from 'clsx';
 import { DESTINATIONS } from '@/lib/destinations';

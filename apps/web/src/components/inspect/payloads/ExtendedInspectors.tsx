@@ -7,7 +7,7 @@ import { fetchTriggers } from '@/lib/api/kpi';
 import type { PostListingTrigger } from '@/types/kpi';
 import type { DealEvent } from '@/types/bd';
 import { TRIGGER_DAY_LABELS, TRIGGER_TYPE_LABELS } from '@/types/kpi';
-import { states } from '@/data';
+import { states } from '@/data/states'; // direct, not the barrel — the barrel drags competitors.ts into the shell (P5)
 import { NarrativeGap, useStateNarrative } from '@/data/stateNarrative';
 import { formatDate, formatMoney } from '@/lib/format';
 import { CardSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
