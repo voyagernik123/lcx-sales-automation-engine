@@ -35,6 +35,8 @@ import type { Stage } from '@lcx/gl';
 export interface FlatChartFrame {
   /** Progress of the current transition, 0→1. Always 1 immediately under reduced motion. */
   readonly t: number;
+  /** Arrival bloom, 0 or 1 (useArrivalBloom): the renderers scale their emissive gain by 1 + bloom·k·(1−t) over the entrance. */
+  readonly bloom: number;
   /**
    * WHICH transition `t` belongs to, and the two are drawn completely differently.
    *
@@ -54,6 +56,8 @@ export interface FlatChartFrame {
 }
 
 export interface UseFlatChartOptions {
+  /** Arrival bloom from useArrivalBloom (0 | 1); applied to the ENTRANCE only. */
+  readonly bloom?: number;
   /** CSS pixel size. Device pixels are derived from devicePixelRatio. */
   readonly width: number;
   readonly height: number;
@@ -87,7 +91,7 @@ export function useFlatChart(
   const drawRef = useRef(draw);
   drawRef.current = draw;
 
-  const { width, height, entranceMs = 420, updateMs = 260 } = opts;
+  const { width, height, entranceMs = 420, updateMs = 260, bloom = 0 } = opts;
   const deps = opts.deps ?? [];
 
   const paint = useCallback(async () => {
@@ -128,7 +132,7 @@ export function useFlatChart(
     const phase: 'enter' | 'update' = entered.current ? 'update' : 'enter';
     const runFrame = (t: number) => {
       renderer.render(canvas, ({ width: fw, height: fh }) => {
-        drawRef.current(renderer.stage, { t, width: fw, height: fh, phase });
+        drawRef.current(renderer.stage, { t, width: fw, height: fh, phase, bloom: phase === 'enter' ? bloom : 0 });
       });
       setRefused(false);
       setReason(null);

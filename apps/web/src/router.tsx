@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { AppLayout } from '@/components/layout';
 import { SelectOperator } from '@/pages/SelectOperator';
 import { ToastContainer, useToastStore } from '@/components/shared/Toast';
+import { RouteError } from '@/components/shared/RouteError';
 import { useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
 import { verifyPersistedIdentity } from '@/lib/apiClient';
@@ -214,8 +215,12 @@ export const router = createBrowserRouter([
       {
         path: '/',
         element: <AppLayout />,
+        // A wrong URL and a thrown route error are NAMED states, not the framework's developer page (RouteError.tsx).
+        errorElement: <RouteError />,
         children: [
           { index: true, element: <Home /> },
+          // A wrong URL under the shell keeps the shell (and the room behind it): a named not-found INSIDE AppLayout.
+          { path: '*', element: <RouteError notFound /> },
           { path: 'regulatory-dashboard', element: <Dashboard /> },
           { path: 'ontology', element: <OntologyExplorer /> },
           { path: 'states', element: <StateMap /> },

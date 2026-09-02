@@ -24,6 +24,8 @@
 export const DESK_ROUTES = new Set([
   // THE HEROES (THE PRODUCTION, P4): routes whose primary instrument needs data the harness otherwise aborts.
   '/market-map', '/audit-log',
+  // THE DESK CHARTS (P5): the routes whose GL charts need figures to draw at all.
+  '/bd-kpis', '/win-loss', '/forecast', '/scorecard',
   '/command-deck', '/bd-pipeline', '/command', '/regulatory-dashboard',
   '/distribution', '/marketing', '/gps', '/wbr',
 ]);
@@ -316,6 +318,76 @@ export function heroFixtures(frozenAtIso) {
   ];
 }
 
+/**
+ * THE DESK CHART FIXTURES (THE PRODUCTION, P5). /bd-kpis, /win-loss, /forecast and /scorecard draw their GL charts from
+ * figures the harness otherwise aborts; without these the P5 coverage gate measures empty states. Shapes from
+ * apps/web/src/types/kpi.ts (KpiDashboard, PostListingTrigger), lib/api/bd.ts (KpiSnapshot, BoardDeal), lib/api/intel.ts
+ * (Scorecard, MetricCalibration). Deterministic (seeded), anchored to the frozen clock.
+ */
+export function deskChartFixtures(frozenAtIso) {
+  const at = Date.parse(frozenAtIso);
+  const iso = (msAgo) => new Date(at - msAgo).toISOString();
+  const day = 86_400_000;
+  let seed = 20260905;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const stats = (sent) => { const replied = Math.round(sent * (0.08 + rnd() * 0.2)); return { sent, replied, rate: sent ? replied / sent : 0 }; };
+  const kpis = {
+    newHighScoreLeadsThisWeek: 7,
+    replyRateBySource: { coingecko: stats(140), defillama: stats(95), manual: stats(30), referral: stats(18) },
+    replyRateByChannel: { email: stats(210), linkedin: stats(64), telegram: stats(22) },
+    avgDaysFirstTouchToHandoff: 6.4, avgDaysHandoffToProposal: 9.1, avgDaysProposalToWon: 21.7,
+    funnel: { enrolled: 284, replied: 61, proposal: 19, won: 8 },
+    revenueByStream: { listing: 412_000, marketMaking: 96_000, custody: 44_000, marketing: 28_500 },
+    topObjections: [['Fees', 14], ['Timing', 9], ['Liquidity depth', 7], ['Jurisdiction', 5], ['Competitor exclusivity', 3]].map(([category, count]) => ({ category, count })),
+    stalledDeals: Array.from({ length: 5 }, (_, i) => ({ id: `sd${i}`, projectName: `Stalled ${i + 1}`, stage: ['proposal', 'negotiation', 'legal'][i % 3], daysSinceUpdate: 12 + i * 7, blocker: ['Awaiting legal', 'Fee revision', 'KYB documents', 'Board approval', 'Counter-offer'][i] })),
+    postListingExpansion: { totalWon: 8, withExpansion: 3, expansionRevenue: 61_000 },
+    weeklyView: { hot: 4, stalled: 5, overdue: 2 },
+  };
+  // KpiSnapshot (lib/api/bd.ts:716): counts + revenue IN CENTS (CalledVsLanded divides totalRevenue by 100) + weekly view.
+  const history = Array.from({ length: 52 }, (_, i) => { const w = 51 - i; const g = 1 + i * 0.02 + rnd() * 0.1; const rev = Math.round((180_000 + i * 6_000 + rnd() * 40_000) * 100); return {
+    date: iso(w * 7 * day).slice(0, 10), newHighScoreLeadsWeek: Math.round(3 * g + rnd() * 3), emailSent: Math.round(40 * g), emailReplied: Math.round(6 * g), linkedinSent: Math.round(12 * g), linkedinReplied: Math.round(2 * g),
+    funnelEnrolled: Math.round(50 * g), funnelReplied: Math.round(11 * g), funnelProposal: Math.round(3.5 * g), funnelWon: Math.round(1.4 * g),
+    revenueListing: Math.round(rev * 0.62), revenueMarketing: Math.round(rev * 0.08), revenueLiquidity: Math.round(rev * 0.17), revenueDual: Math.round(rev * 0.06), revenueEmt: Math.round(rev * 0.04), revenueCustom: Math.round(rev * 0.03), totalRevenue: rev,
+    stalledDealCount: 3 + (i & 3), totalWon: Math.round(2 + i * 0.12), withExpansion: Math.round(i * 0.04), expansionRevenue: Math.round(i * 900 * 100), hotDeals: 2 + (i & 1), stalledDeals: 3 + (i & 3), overdueActions: i & 1,
+  }; });
+  // ForecastHistoryPoint (lib/api/kpi.ts:56): a daily band in DOLLARS the chart compares against the snapshots' actuals;
+  // p10/p90/expected null on a day the simulation refused — the fixture refuses two days so the hole is drawn, not invented.
+  const forecastHistory = Array.from({ length: 90 }, (_, i) => { const d = 89 - i; const mid = 260_000 + i * 1_400 + rnd() * 12_000; const refused = i === 40 || i === 41;
+    return { date: iso(d * day).slice(0, 10), p10: refused ? null : Math.round(mid * 0.72), p50: refused ? null : Math.round(mid), p90: refused ? null : Math.round(mid * 1.31), expected: refused ? null : Math.round(mid), distributionRefusal: refused ? 'NO_PRICED_DEALS' : null };
+  });
+  const triggers = Array.from({ length: 6 }, (_, i) => ({ id: `tg${i}`, dealId: `d${i}`, projectId: `p${200 + i}`, projectName: `Listed ${i + 1}`, triggerDay: [7, 30, 90][i % 3], triggerType: ['check-in', 'expansion', 'review'][i % 3], status: i < 4 ? 'pending' : 'done', draftContent: null, taskSummary: `Day ${[7, 30, 90][i % 3]} touchpoint`, dueAt: iso(-(i + 1) * 2 * day), createdAt: iso((i + 3) * day), completedAt: i < 4 ? null : iso(day) }));
+  const stages = ['prospect', 'qualified', 'proposal', 'negotiation', 'legal', 'won', 'lost'];
+  // Closed deals are ~45 % of the board and CLOSED WITHIN 80 DAYS: WinLoss keeps stage won|lost with closedAt ≥ its 90-day cutoff.
+  const board = Array.from({ length: 36 }, (_, i) => { const stage = i % 9 < 2 ? 'won' : i % 9 < 4 ? 'lost' : stages[Math.floor(rnd() * 5)]; const won = stage === 'won'; return {
+    id: `bd${i}`, projectId: `p${300 + i}`, projectName: `Deal ${i + 1}`, projectTicker: `D${i}`, stage, packageType: ['Standard', 'Premium', 'Institutional', null][i % 4], packageValue: won || stage === 'lost' ? Math.round(20_000 + rnd() * 180_000) : Math.round(15_000 + rnd() * 120_000),
+    owner: ['nik', 'monty', null][i % 3], band: ['immediate', 'high', 'nurture', 'watch'][i % 4], priorityScore: Math.round(rnd() * 100), daysSinceUpdate: Math.round(rnd() * 40), updatedAt: iso(rnd() * 40 * day), wonAt: won ? iso((5 + rnd() * 75) * day) : null,
+  }; });
+  const scorecard = { northStar: { totalWon: 8, wonLast90d: 3 }, funnel: { openDeals: 27, openValueUsd: 1_840_000, winRatePct: 29.6, avgCycleDays: 37 }, intelligence: { observations: 1420, scoredProjects: 512, coverage: [['coingecko', 'CoinGecko', 480, 93.7], ['defillama', 'DefiLlama', 310, 60.5], ['github', 'GitHub', 205, 40.0]].map(([source, label, okCount, pct]) => ({ source, label, okCount, pct })), convictionLift: 1.42, convictionCapture: 0.37, convictionVerdict: 'predictive' } };
+  const metrics = ['conviction', 'momentum', 'liquidity', 'community', 'regulatory'];
+  const calibration = { latest: metrics.map((m, i) => ({ metricKey: m, kind: i < 3 ? 'score' : 'signal', lift: +(0.8 + rnd() * 1.2).toFixed(2), quintileCapture: +(0.2 + rnd() * 0.4).toFixed(2), wonMedian: +(50 + rnd() * 30).toFixed(1), universeMedian: +(30 + rnd() * 30).toFixed(1), sampleWon: 8, sampleUniverse: 512, verdict: i < 2 ? 'predictive' : i < 4 ? 'weak' : 'insufficient' })),
+    history: metrics.flatMap((m) => Array.from({ length: 8 }, (_, k) => ({ snapshotDate: iso((7 - k) * 30 * day).slice(0, 10), metricKey: m, lift: +(0.7 + rnd() * 1.3).toFixed(2) }))) };
+  const winLoss = {
+    overall: { key: 'all', won: 8, lost: 8, total: 16, winRate: 0.500, wonValueUsd: 112000 },
+    byJurisdiction: [{ key: 'eu', won: 5, lost: 3, total: 8, winRate: 0.625, wonValueUsd: 85000 }, { key: 'us', won: 3, lost: 5, total: 8, winRate: 0.375, wonValueUsd: 67000 }],
+    byPackage: [{ key: 'Standard', won: 4, lost: 3, total: 7, winRate: 0.571, wonValueUsd: 76000 }, { key: 'Premium', won: 3, lost: 2, total: 5, winRate: 0.600, wonValueUsd: 67000 }, { key: 'Institutional', won: 1, lost: 3, total: 4, winRate: 0.250, wonValueUsd: 49000 }],
+    bySource: [{ key: 'coingecko', won: 4, lost: 4, total: 8, winRate: 0.500, wonValueUsd: 76000 }, { key: 'defillama', won: 2, lost: 2, total: 4, winRate: 0.500, wonValueUsd: 58000 }, { key: 'referral', won: 2, lost: 2, total: 4, winRate: 0.500, wonValueUsd: 58000 }],
+    topLossReasons: [['Fees', 6], ['Timing', 4], ['Liquidity depth', 3], ['Jurisdiction', 2], ['Competitor exclusivity', 1]].map(([reason, count]) => ({ reason, count })),
+    narrative: 'Fixture narrative: wins cluster in EU listings on Standard packages; losses cite fees and timing. Deterministic for the harness.',
+    usedLlm: false,
+  };
+  return [
+    ['**/v1/kpis', () => envelope(kpis)], ['**/v1/kpis?*', () => envelope(kpis)],
+    ['**/v1/kpis/history*', () => envelope(history)],
+    // registered AFTER deskFixtures' `**/v1/kpis/forecast*` so this later handler wins for the HISTORY path (Playwright: last registered wins)
+    ['**/v1/kpis/forecast-history*', () => envelope(forecastHistory)],
+    ['**/v1/kpis/triggers*', () => envelope(triggers)],
+    ['**/v1/deals/board*', () => envelope(board)],
+    ['**/v1/intel/scorecard*', () => envelope(scorecard)],
+    ['**/v1/intel/calibration*', () => envelope(calibration)],
+    ['**/v1/ai/win-loss*', () => envelope(winLoss)],
+  ];
+}
+
 export function allDeskFixtures(frozenAtIso) {
-  return [...Object.values(deskFixtures(frozenAtIso)).flat(), ...heroFixtures(frozenAtIso)];
+  return [...Object.values(deskFixtures(frozenAtIso)).flat(), ...heroFixtures(frozenAtIso), ...deskChartFixtures(frozenAtIso)];
 }

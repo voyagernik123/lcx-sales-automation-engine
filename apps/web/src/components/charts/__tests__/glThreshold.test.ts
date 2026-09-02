@@ -111,6 +111,8 @@ const REGISTRY: Record<string, Entry> = {
   Histogram: { hook: 'useFlatBars', litAxis: 'modal bin height; a 2 % tail bin is below the floor and is named in §5', unitsL: 110.4, devicePxPerUnit: 2 },
   StackedBarH: { hook: 'useFlatTrack', litAxis: 'segment width', unitsL: 288, devicePxPerUnit: 2 },
   FunnelChart: { hook: 'useFlatBars', litAxis: 'bar length', unitsL: 288, devicePxPerUnit: 2 },
+  // GroupedColumnChart (P5): VH 180, MT 16, MB 20 → plotH 144; L at 60 % of plotH = 86.4 units; fluid like ColumnChart.
+  GroupedColumnChart: { hook: 'useFlatBars', litAxis: 'column height at 60 % of plotH — the same FlatBars path as ColumnChart, grouped by series', unitsL: 86.4, devicePxPerUnit: 2 },
   /* GaugeChart is FLUID (`className="block w-full"`), so `devicePxPerUnit` is the CONSERVATIVE
      assumption — a card exactly as wide as its 160-unit viewBox — not §5's 320 px card. It
      clears the floor at 26 rather than 52. Breakeven is a card of about 123 CSS px; a gauge

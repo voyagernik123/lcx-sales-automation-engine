@@ -1,0 +1,61 @@
+feat(vfx): P5 GPU CHARTS EVERYWHERE — measured against the resolution floor: one more chart on the engine, the arrival bloom, the desk fixtures
+
+THE PRODUCTION (VFX_PRODUCTION_PLAN.md) P5, after step 1 (97243c2: the datasets left the shell — largest chunk 438 → 352 KB by check-bundle; its own title said 360, the pre-check figure).
+
+WHAT THE PLAN SAID AND WHAT THE FLOOR ALLOWS
+  The plan wanted the 12 chart components on the engine and 35 inline-SVG files moved onto them. `glThreshold.test.ts` is the
+  measured policy: a mark's lit-axis extent must be ≥ 20 device px or the shader's edge cannot exist on it. Ten of twelve were
+  already on the shared flat renderer; ControlBand (L = 5.2) and Sparkline (4.6) were UN-backed at 38c01b1 with the numbers on
+  record, and a twin I built for ControlBand was removed the same hour the ratchet refused it. Of the inline-SVG files, one
+  clears the floor: GroupedColumnChart's columns. The rest — 6-px bars, 9-px range bars, 1-px cells, dot fields, ribbons — stay
+  SVG by measurement, named in the ledger.
+
+WHAT IS NEW ON SCREEN
+  · GroupedColumnChart (win/loss by jurisdiction and by package) moved into components/charts and onto the shared FlatBars
+    path with ColumnChart's recipe; registered with L = 86.4 units × 2 = 172.8 device px. Its SVG columns defer to GL.
+  · THE ARRIVAL BLOOM — one hook on S4's store: `useArrivalBloom(arrivalKey, signature)` decides once per mount whether a
+    chart's figures changed since the operator's last arrival (`markOf` ≠ signature); `useFlatChart` carries `bloom` into the
+    ENTRANCE frame; FlatBars/FlatTrack/FlatDial scale their bloom gain by 1 + 2.5·bloom·(1−t), so a changed figure glows once
+    and settles with the tween that already runs — no timer, nothing at rest, none under reduced motion. Six desk sites keyed
+    (kpi:channel-conversion, kpi:funnel-stages, kpi:forecast, winloss:by-jurisdiction, winloss:by-package, winloss:loss-reasons).
+  · A wrong URL is a named state inside the shell ("This page does not exist", the way home), and a thrown route error goes
+    through the product ErrorNotice — not react-router's developer page on black (RouteError.tsx; routeError.test.tsx).
+  · The KPI desk keeps its load error as an OBJECT, so a refused fetch reads "No connection", not "Something broke".
+    Win/loss too: it rendered its error as a raw red string; it keeps the object and shows the product ErrorNotice.
+
+THE HARNESS
+  · Desk chart fixtures (`/v1/kpis`, `/kpis/history`, `/kpis/forecast-history`, `/kpis/triggers`, `/deals/board`, `/intel/scorecard`,
+    `/intel/calibration`, `/ai/win-loss`; the forecast-history route is registered after the `forecast*` glob that shadowed it)
+    so /bd-kpis, /win-loss, /forecast and /scorecard draw their charts under measurement; those routes join the fixtured set.
+
+MEASURED
+  THE DESK NUMBERS, READ HONESTLY. The plan asked for ≥ 50 % GL coverage on desk routes. With the fixtures the four
+  fixture-fed desks now RENDER (figures 23–47 per capture, 0 errors) and their coverage FELL — /bd-kpis 36 → 11 % dark,
+  /win-loss 36 → 12 %, /forecast 36 → 8 %, /scorecard 36 → 22 % (light 55 → 21/19/14/30) — because a rendered desk is
+  opaque cards over the plate; the P4 figures measured empty desks. The eight other desk routes are unchanged to the
+  percent. The target is NOT met and is not tuned away: it is the §4 plate question (how much stage a card may show).
+  The aggregate medians move by the same cause: dark 34 → 33 %, light 47 → 44 %; ≥ 35 % dark 37 → 34, ≥ 50 % light 38 → 35.
+  GL contexts 77 → 78: the grouped-column chart on /win-loss is one more engine canvas.
+  THE SWEEP (docs/instrument/audit/production-p5; 79 routes × 2 themes, fixtures incl. heroes and desk charts, one-page-load pairs,
+    warm-up 80 routes / 160 s):
+    dark: GL visible on 71 → 72 of 79 · median 34% → 33% · ≥ 50% on 1 → 1 · ≥ 35% on 37 → 34 · ≥ 20% on 51 → 49
+    light: GL visible on 76 → 77 of 79 · median 47% → 44% · ≥ 50% on 38 → 35 · ≥ 35% on 51 → 48 · ≥ 20% on 60 → 59
+    DESK ROUTES (P4 → P5; "figures" says whether content rendered — with the fixtures the desks are opaque cards over the plate):
+    /bd-kpis               dark  36% →  11% · light  55% →  21% · figures 37 · errors 0
+    /win-loss              dark  36% →  12% · light  55% →  19% · figures 32 · errors 0
+    /forecast              dark  36% →   8% · light  55% →  14% · figures 47 · errors 0
+    /scorecard             dark  36% →  22% · light  55% →  30% · figures 23 · errors 0
+    /command-deck          dark  29% →  29% · light  36% →  36% · figures 30 · errors 0
+    /bd-pipeline           dark  27% →  27% · light  53% →  53% · figures 17 · errors 0
+    /command               dark  17% →  17% · light  36% →  36% · figures 91 · errors 0
+    /regulatory-dashboard  dark   7% →   7% · light  14% →  14% · figures 77 · errors 0
+    /distribution          dark  21% →  21% · light  35% →  35% · figures 59 · errors 0
+    /marketing             dark  30% →  30% · light  45% →  45% · figures 8 · errors 0
+    /gps                   dark  14% →  14% · light  27% →  27% · figures 51 · errors 0
+    /wbr                   dark  17% →  17% · light  25% →  25% · figures 47 · errors 0
+    Hero panels held: orrery 80%/83% · pipeline 43%/91% · globe 65%/81% · vault 31%/88% · storm —/— · surface 85%/92%. Chrome-fade text hits: 0. Stage redraw: n 154, median 4.1 ms, p90 4.6, max 7.3, over 8: 0.
+    Standing: continuity 76 → 77 · motion at rest 0 → 0 · max intervals 2 → 2 · rAF loops 0 → 0 · GL contexts 77 → 78 · page errors 0 → 0.
+
+gate: root ci-check clean on run 1; 0 npm error, 0 unhandled: 57/1997 · 18/364 · 170(+1 skipped)/3532(+14 skipped) · 208/2811 · 2/20 ·
+      web build 5.50 s · perf budget OK (JS 760/850 · CSS 117/140 · fonts 434/440 · largest 357/440 · passthrough 867/1024 · 208 lazy chunks).
+      Informational: check-bundle says INITIAL_PREFIXES is stale (762 vs 760 KB; index.html wins) — recorded in the ledger, not touched here.

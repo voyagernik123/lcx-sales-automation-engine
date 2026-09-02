@@ -39,6 +39,7 @@ export function ForecastCard({ forecast }: { forecast: ForecastData }) {
         <div className="mt-4">
           <div className="mb-1 text-xs text-grey">Win probability — top open deals</div>
           <BarChartH
+            arrivalKey="kpi:forecast"
             data={forecast.deals.map((d) => ({ label: d.projectName, value: d.winProbability }))}
             maxBars={8}
             formatValue={(v) => `${Math.round(v)}%`}

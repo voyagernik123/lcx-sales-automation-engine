@@ -42,7 +42,7 @@ export function FunnelSection({ funnel }: { funnel: FunnelCounts }) {
         {funnelValid ? (
           <FunnelChart stages={STAGES.map((s, i) => ({ label: s.label, value: values[i] }))} />
         ) : (
-          <ColumnChart data={STAGES.map((s, i) => ({ label: s.label, value: values[i] }))} />
+          <ColumnChart data={STAGES.map((s, i) => ({ label: s.label, value: values[i] }))} arrivalKey="kpi:funnel-stages" />
         )}
       </div>
     </ChartCard>

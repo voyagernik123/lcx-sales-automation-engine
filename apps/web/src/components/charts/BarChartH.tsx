@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { seriesVar } from './palette';
 import { useFlatBars, resolveColour } from './gl/FlatBars';
+import { arrivalSignature, useArrivalBloom } from './gl/useArrivalBloom';
 import { formatNumber, roundedRightRect, truncate } from './utils';
 import { ChartTooltip, TipContent, useTooltip } from './tooltip';
 
@@ -12,6 +13,8 @@ export interface BarDatum {
 }
 
 export interface BarChartHProps {
+  /** THE ARRIVAL BLOOM (P5): a stable id for this chart's figure; when its data changed since the operator's last arrival, the marks glow once on entrance. */
+  arrivalKey?: string;
   data: BarDatum[];
   formatValue?: (v: number) => string;
   /** Show at most this many bars (top of the list). */
@@ -31,7 +34,7 @@ const BAR_H = 18; // ≤24px thick
  * still exactly what shipped — W0 found this primitive correct, and only its flat fill was
  * wrong with it.
  */
-export function BarChartH({ data, formatValue = formatNumber, maxBars }: BarChartHProps) {
+export function BarChartH({ data, formatValue = formatNumber, maxBars, arrivalKey }: BarChartHProps) {
   const { tip, show, hide } = useTooltip();
   const hostRef = useRef<HTMLDivElement | null>(null);
   /* The colour token cannot resolve until the host is on the DOM — `var(--chart-1)` means
@@ -62,7 +65,8 @@ export function BarChartH({ data, formatValue = formatNumber, maxBars }: BarChar
     [rows, max, ready],
   );
 
-  const { canvas: glCanvas, refused: glRefused } = useFlatBars({
+  const bloom = useArrivalBloom(arrivalKey, arrivalSignature(data.map((d) => d.value)));
+  const { canvas: glCanvas, refused: glRefused } = useFlatBars({ bloom,
     rects, viewW: VW, viewH: VH, orientation: 'horizontal',
   });
 

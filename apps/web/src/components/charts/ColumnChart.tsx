@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { seriesVar, CHART_GRID } from './palette';
 import { useFlatBars, resolveColour } from './gl/FlatBars';
+import { arrivalSignature, useArrivalBloom } from './gl/useArrivalBloom';
+
 import { formatNumber, niceTicks, roundedTopRect, truncate } from './utils';
 import { ChartTooltip, TipContent, useTooltip } from './tooltip';
 
@@ -17,6 +19,8 @@ export interface ColumnChartProps {
   formatValue?: (v: number) => string;
   /** Direct value labels: 'max' (default) labels only the tallest column. */
   showValues?: 'all' | 'max' | 'none';
+  /** THE ARRIVAL BLOOM (P5): a stable id for this chart's figure; when its data changed since the operator's last arrival, the marks glow once on entrance. */
+  arrivalKey?: string;
 }
 
 const VW = 480; // internal coordinate width; SVG scales to 100% of container
@@ -37,6 +41,7 @@ export function ColumnChart({
   height = 180,
   formatValue = formatNumber,
   showValues = 'max',
+  arrivalKey,
 }: ColumnChartProps) {
   const { tip, show, hide } = useTooltip();
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -81,8 +86,9 @@ export function ColumnChart({
 
   /* Vertical: the entrance grows each column UP FROM THE BASELINE, which is the only motion
      that carries the data — the column arrives at its value rather than fading in at it. */
+  const bloom = useArrivalBloom(arrivalKey, arrivalSignature(data.map((d) => d.value)));
   const { canvas: glCanvas, refused: glRefused } = useFlatBars({
-    rects, viewW: VW, viewH: VH, orientation: 'vertical',
+    rects, viewW: VW, viewH: VH, orientation: 'vertical', bloom,
   });
 
   /* AFTER every hook, deliberately: an empty→populated data prop must not change the hook

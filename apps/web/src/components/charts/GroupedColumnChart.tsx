@@ -1,6 +1,10 @@
-import { seriesVar, CHART_GRID } from '@/components/charts';
-import { formatNumber, niceTicks, roundedTopRect, truncate } from '@/components/charts/utils';
-import { ChartTooltip, TipContent, useTooltip } from '@/components/charts/tooltip';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { seriesVar, CHART_GRID } from './palette';
+import { formatNumber, niceTicks, roundedTopRect, truncate } from './utils';
+import { ChartTooltip, TipContent, useTooltip } from './tooltip';
+import { useFlatBars, resolveColour } from './gl/FlatBars';
+import { arrivalSignature, useArrivalBloom } from './gl/useArrivalBloom';
+
 
 export interface GroupedColumnDatum {
   label: string;
@@ -14,6 +18,8 @@ export interface GroupedColumnChartProps {
   series: string[];
   height?: number;
   formatValue?: (v: number) => string;
+  /** THE ARRIVAL BLOOM (P5): a stable id for this chart's figure; when its data changed since the operator's last arrival, the marks glow once on entrance. */
+  arrivalKey?: string;
 }
 
 const VW = 480;
@@ -27,8 +33,11 @@ const INNER_GAP = 2; // gap between columns inside a group
  * Grouped vertical columns (2+ series side by side per category) following the
  * chart-kit conventions: hairline grid, one axis, ≤24px columns, legend below.
  */
-export function GroupedColumnChart({ data, series, height = 180, formatValue = formatNumber }: GroupedColumnChartProps) {
+export function GroupedColumnChart({ data, series, height = 180, formatValue = formatNumber, arrivalKey }: GroupedColumnChartProps) {
   const { tip, show, hide } = useTooltip();
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { if (hostRef.current) setReady(true); }, []);
   if (data.length === 0 || series.length === 0) return null;
 
   const VH = height;
@@ -45,9 +54,27 @@ export function GroupedColumnChart({ data, series, height = 180, formatValue = f
   const usedW = colW * series.length + INNER_GAP * (series.length - 1);
   const maxLabelChars = Math.max(3, Math.floor(band / 6));
 
+  /* THE GL TWIN (THE PRODUCTION, P5): the same columns on the shared FlatBars path ColumnChart uses — one rect per column,
+     coloured by series, lit along its height (L = 60 % of plotH = 86.4 units × 2 = 172.8 device px, well over the 20-px floor;
+     registered in glThreshold.test.ts). The SVG keeps grid, ticks, labels and tooltip targets and draws the columns itself
+     whenever the renderer refuses (print, reduced GL, module not landed, jsdom). */
+  const rects = useMemo(
+    () => (!ready || !hostRef.current) ? [] : data.flatMap((d, i) => {
+      const startX = ML + i * band + (band - usedW) / 2;
+      return d.values.map((v, j) => {
+        const colTop = y(v); const h = MT + plotH - colTop;
+        return { x: startX + j * (colW + INNER_GAP), y: colTop, w: colW, h, colour: resolveColour(seriesVar(j + 1), hostRef.current as Element) };
+      }).filter((rc) => rc.h > 0);
+    }),
+    [data, top, band, usedW, colW, plotH, ready],
+  );
+  const bloom = useArrivalBloom(arrivalKey, arrivalSignature(data.flatMap((d) => d.values)));
+  const { canvas: glCanvas, refused: glRefused } = useFlatBars({ rects, viewW: VW, viewH: VH, orientation: 'vertical', bloom });
+
   return (
-    <div className="w-full">
+    <div className="w-full" ref={hostRef}>
       <div className="relative w-full">
+        {glCanvas}
         <svg viewBox={`0 0 ${VW} ${VH}`} className="block w-full" style={{ height: 'auto' }} role="img">
           {ticks.map((t) => (
             <g key={t}>
@@ -71,7 +98,7 @@ export function GroupedColumnChart({ data, series, height = 180, formatValue = f
                   const h = MT + plotH - colTop;
                   return (
                     <g key={j}>
-                      {h > 0 && <path d={roundedTopRect(colX, colTop, colW, h, 3)} fill={seriesVar(j + 1)} />}
+                      {h > 0 && glRefused && <path d={roundedTopRect(colX, colTop, colW, h, 3)} fill={seriesVar(j + 1)} />}
                       {/* hit target = the column's slice of the band, full plot height */}
                       <rect
                         x={colX - INNER_GAP / 2}

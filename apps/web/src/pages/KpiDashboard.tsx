@@ -39,7 +39,9 @@ export function KpiDashboard() {
   const [universe, setUniverse] = useState<number | null>(null);
   const [triggers, setTriggers] = useState<PostListingTrigger[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // The error OBJECT, not its message: ErrorNotice classifies a refused fetch as "no connection" only from the object
+  // (a string reads as "something broke" — which is what the KPI desk said under the harness with the API absent).
+  const [error, setError] = useState<unknown>(null);
   const [exporting, setExporting] = useState(false);
   const [range, setRange] = useState<RangeKey>('30d');
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -73,7 +75,7 @@ export function KpiDashboard() {
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Failed to load KPIs');
+      setError(err ?? new Error('Failed to load KPIs'));
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -298,7 +300,7 @@ export function KpiDashboard() {
             subtitle={totalSent > 0 ? `${totalReplied} replies on ${totalSent} sent` : undefined}
           >
             {channelColumns.length > 0 ? (
-              <ColumnChart data={channelColumns} height={170} showValues="all" formatValue={(v) => `${Math.round(v)}%`} />
+              <ColumnChart data={channelColumns} height={170} showValues="all" formatValue={(v) => `${Math.round(v)}%`} arrivalKey="kpi:channel-conversion" />
             ) : (
               <p className="py-8 text-center text-xs text-grey">No outreach sent yet</p>
             )}

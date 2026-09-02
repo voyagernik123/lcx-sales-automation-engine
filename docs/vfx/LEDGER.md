@@ -41,19 +41,13 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P2 THE CAMERA MOVES | **LIVE** | 530f0d9 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
 | P3 THE FIDELITY STACK | **LIVE** | 5c22d09 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
 | P4 THE EIGHT HEROES (+ desktop 0.4.0) | **LIVE** | web 97243c2 (carries 8cdf9aa · 3c29de8 · 0c0cd3a) · desktop v0.4.0 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
-| P5 GPU CHARTS EVERYWHERE | **IN PROGRESS (byte pre-step)** — P4 awaits Cloudflare Pages for its LIVE flip | — | | §4 bytes: competitors.ts 66 KB + states.ts 19 KB ride the shell via the `@/data` barrel from Sidebar, ExtendedInspectors, lib/compliance; move them out first (target shell ≤ 360 KB), then the 12 charts on the shared renderer |
+| P5 GPU CHARTS EVERYWHERE | **COMMITTED (this commit; verify-live pending → then LIVE)** — steps 1–4 in this commit: grouped chart on the engine, arrival bloom (6 keyed sites), RouteError, desk fixtures; sweep recorded (desk ≥ 50 % NOT met — the §4 plate finding) | — | | §4 bytes: competitors.ts 66 KB + states.ts 19 KB ride the shell via the `@/data` barrel from Sidebar, ExtendedInspectors, lib/compliance; move them out first (target shell ≤ 360 KB), then the 12 charts on the shared renderer |
 | P6 THE OBJECTS (glTF) | PENDING | | | |
 | P7 LIVENESS | PENDING | | | |
 | P8 HARDENING | PENDING | | | |
 | P9 PRODUCTION GATE + RELEASE | PENDING | | | |
 
-**NEXT ACTION (2026-09-03, night):** P4 is LIVE on both surfaces (verify-live 97243c2: Pages carries chrome-fade-y, chrome-fade-x,
-data-hero, uInvSize; Render deployment 6225350768 success) and v0.4.0 is on the update channel and installed here. P5 is IN
-PROGRESS: step 1 (bytes, 97243c2) LIVE; in the tree, uncommitted — GroupedColumnChart moved onto the shared bars renderer and
-registered; the arrival bloom (useArrivalBloom → frame.bloom → FlatBars/Track/Dial) with six keyed sites; desk chart
-fixtures (kpis/history/triggers/board/scorecard/calibration); RouteError (named 404 inside the shell) and the KPI page's
-error object. Sequence: probe the four desk routes → full sweep (record + ≥ 50 % coverage on desk routes, in-place pairs,
-warm-up) → root gate → commit → push → verify → P5 LIVE. Then P6 per the plan §3.
+**NEXT ACTION (written 2026-09-02 21:40 local, Fable weekly budget at 96 % — this recipe is model-agnostic; finish it on any tier):** P5 CLOSE-OUT, from this tree, in order. (1) Sweep: `ls docs/instrument/audit/production-p5/BASELINE.json` — if absent, re-run `INSTRUMENT_FIXTURES=1 INSTRUMENT_PHASE_LABEL="P5 · GPU charts everywhere (to the resolution floor)" INSTRUMENT_OUT_DIR=docs/instrument/audit/production-p5 INSTRUMENT_GALLERY_DIR=docs/vfx node scripts/instrument-audit.mjs` (~75 min). (2) `node docs/vfx/p5/fill.mjs docs/instrument/audit/production-p4/BASELINE.json docs/instrument/audit/production-p5/BASELINE.json` → paste its output into `docs/vfx/p5/commit-msg.txt` at {{DESK}}/{{SWEEP}}; the ≥ 50 % desk-coverage target is NOT met on card-dense desks (opaque cards over the plate) — record it as the §4 plate finding, do not tune it away. (3) Root gate from the repo root: `npm run ci-check` (~10 min; 0 `npm error`, all FIVE stage totals) → {{GATE}}. (4) `git add apps/web/src/components/charts apps/web/src/components/deals/GroupedColumnChart.tsx apps/web/src/components/kpi/ForecastCard.tsx apps/web/src/components/kpi/FunnelSection.tsx apps/web/src/components/shared/RouteError.tsx apps/web/src/components/shared/__tests__/routeError.test.tsx apps/web/src/pages/KpiDashboard.tsx apps/web/src/pages/WinLoss.tsx apps/web/src/router.tsx scripts/instrument-fixtures.mjs docs/vfx/LEDGER.md docs/vfx/GALLERY.md docs/vfx/gallery docs/vfx/p5 docs/instrument/audit/production-p5 scripts/verify-live.sh` — NOT the P6 files. (5) Update this row's P5 status + this NEXT ACTION, `git commit -F docs/vfx/p5/commit-msg.txt`, `git push lcx-sales dev:main`. (6) `bash scripts/verify-live.sh <sha> --lazy-js 'winloss:by-jurisdiction' --lazy-js 'kpi:channel-conversion'` + the GitHub deployments API; open the CI run. (7) Flip §2 P5 → LIVE with the sha; update memory `vfx-production-plan.md`. (8) SEPARATE commit: `git add packages/gl/src/env/gltf.ts packages/gl/src/env/gltf.test.ts scripts/blender/export_gltf.py docs/vfx/P6_PREP.md` → "feat(gl): P6 pre-work — glTF loader (5 tests), hand-written GLB exporter, prep note; inert, imported by nothing" → push. (9) P6 proper per docs/vfx/P6_PREP.md — after the Fable reset (~2026-09-03 17:30 local); it is the creative work, spend Fable there, not on (1)–(8).
 
 ## 3 · STANDING RULES (from the previous programs; every one still binds)
 
@@ -73,6 +67,8 @@ warm-up) → root gate → commit → push → verify → P5 LIVE. Then P6 per t
 
 ## 4 · OPEN ITEMS
 
+- **check-bundle INITIAL_PREFIXES is stale (P5 gate, 2026-09-02):** the prefix list and index.html disagree on the initial JS set (762 vs 760 KB; index.html wins, the list now only guards the per-chunk ceiling). Re-derive the list from index.html or delete it — one line, next docs/perf pass.
+- **Instrument fixture gap — the watch (seen in the P5 sweep captures, 2026-09-03).** Every desk capture's top bar reads "WATCH The watch is unavailable — Failed to fetch. Last looked never." because `useArrival.ts:94` polls `/v1/watch?since=…` and `instrument-fixtures.mjs` has no fixture for it (unlisted endpoints are aborted by design). It does not move coverage, but it is a visible failure string in the record and the gallery. NOT patched mid-sweep: the P5 record must match the fixtures P5 commits. Fix in the next sweep: a `WatchResponse` fixture (`packages/shared/src/watch.ts:56` — `since` echoed, `asOf`, `items[]` a few ranked WatchItems, `byWorkspace` for the held compartments, `unranked: 0`, `absent[]` at least one sentence when items are empty — the API refuses empty+empty).
 - **Bytes — MEASURED per module (2026-09-03, sourcemap attribution of the 448 KB shell chunk, 98% attributed).** The shell is
   not the engine and not the routes: `src/data/competitors.ts` 66 KB, `components/inspect/*` 56 KB (the payload registry),
   lucide-react 39 KB, `components/layout/*` 34 KB, `src/data/states.ts` 19 KB, `router.tsx` 15 KB, `data/products.ts` 7.6 KB,
@@ -669,3 +665,32 @@ warm-up) → root gate → commit → push → verify → P5 LIVE. Then P6 per t
   with the P4 needles + `uInvSize`; the LIVE flips for P4 and the P5 byte step follow its report.
 - 2026-09-03 · **P4 LIVE.** verify-live 97243c2 — probe 1: Pages has `chrome-fade-y` (shell JS), `chrome-fade-x` (CSS), `data-hero` and
   `uInvSize` (lazy chunks); Render deployment 6225350768 success. The P5 byte step rides the same commit and is live with it.
+- 2026-09-03 · **P5 desk probe with fixtures — three findings.** /bd-kpis: charts draw, coverage 36 → 45 dark · 55 → 72 light —
+  and the KPI section still throws (`(history ?? []).map is not a function`, NaN polyline points in CalledVsLanded): the
+  history fixture's shape is not what the chart maps; fixing from the fetcher and the component, not by guessing. /win-loss:
+  figures 2 — the board fixture's wins fell outside the page's 90-day `closedAt` cutoff; fixed to 45 % closed within 80 days.
+  /forecast and /scorecard: content renders (39 and 23 figures) and page coverage FELL (36 → 11 · 55 → 19; 36 → 22 · 55 → 30):
+  their real content is opaque cards over the plate. The P5 gate "≥ 50 % on every desk route" is the §4 plate question again —
+  card-dense desks cannot show the room through their cards — and P5 records it rather than tunes the cards away.
+- 2026-09-03 · **KPI desk draws on the engine under fixtures** (0 errors, 37 figures; donut, bars and funnel columns all GL) —
+  page coverage 11 % dark · 21 % light because the desk is now opaque cards over the plate (the §4 plate question, not a chart
+  question). Win/loss: a SECOND fetch (`/v1/ai/win-loss?pool=`) had no fixture and the page rendered its error as a raw red
+  string — same defect as the KPI desk: it now keeps the error object and shows the product ErrorNotice; the fixture is built
+  from the page's own Bucket type. Probe of /win-loss running; the full P5 sweep follows it.
+- 2026-09-03 · **Win/loss draws on the engine** under its fixtures: 0 errors, 32 figures; the two GroupedColumnCharts (by
+  jurisdiction, by package) and the loss-reason bars are GL — the P5 move is visible in the capture. Coverage 12 % dark ·
+  19 % light: opaque cards over the plate, as on every card-dense desk. Full P5 sweep started (79 routes, fixtures incl. the
+  desk charts, warm-up, one-page-load pairs); then gate → commit → push → verify.
+
+- **2026-09-03 (night, during the P5 sweep) — P6 PRE-WORK, inert in the tree.** While the full P5 sweep owned the browser
+  (routes 14→46 of 80 over ~45 min), P6 was grounded and drafted without touching anything the sweep serves:
+  `packages/gl/src/env/gltf.ts` (GLB loader: generic accessor decode incl. KHR_mesh_quantization, node TRS
+  de-quantization, refusals with reasons), `packages/gl/src/env/gltf.test.ts` (5 green: float round-trip, int16
+  quantized, TRS to real units, bad magic, short file), `scripts/blender/export_gltf.py` (hand-written GLB writer:
+  bevelled disc/ring/plinth, the LCX mark ENGRAVED from lcx-mark.svg — 72 vertices at the cut floor, measured — 30°
+  smooth-by-angle rule), and `docs/vfx/P6_PREP.md` (facts, decisions, measured bytes). Export measured: forge.glb
+  146,716 bytes, 11,356 triangles (ring slimmed 160×24 → 128×16: tube facets .02 units), parsed by the loader with
+  bounds equal to the live radii and 0 off-unit normals. Decision: ForgeBackdrop keeps material authority (anisoPreserved
+  pins the √roughness convention; the still's light plinth #B9C5D8 ≠ live #AEBACD, recorded not "fixed"); one
+  theme-agnostic glb; MAX_PASSTHROUGH_KB 1024 → 1152 stated in the P6 body. All four files are UNTRACKED and imported by
+  nothing — they ship in their own commit after P5, never inside P5's.

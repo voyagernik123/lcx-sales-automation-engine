@@ -35,6 +35,8 @@ export interface FlatBarsProps {
   readonly viewW: number;
   readonly viewH: number;
   readonly orientation?: 'vertical' | 'horizontal';
+  /** Arrival bloom (useArrivalBloom): 0 | 1; rides the entrance only. */
+  readonly bloom?: number;
 }
 
 /** `var(--chart-1)` and friends resolve to a hex only once they are on an element. */
@@ -69,7 +71,7 @@ interface BarsKit {
   readonly exposure: typeof import('@lcx/gl/look/colour.js')['exposure'];
 }
 
-export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }: FlatBarsProps) {
+export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal', bloom = 0 }: FlatBarsProps) {
   /*
    * THE MODULES ARE LOADED BEFORE THE FRAME, NOT INSIDE IT — and three parallel lanes found
    * this independently, which is how a defect earns a fix in the shared file.
@@ -126,7 +128,7 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
   const prev = useRef<readonly FlatBarRect[] | null>(null);
 
   const draw = useCallback(
-    (stage: Stage, { t, phase }: { t: number; phase: 'enter' | 'update' }) => {
+    (stage: Stage, { t, phase, bloom }: { t: number; phase: 'enter' | 'update'; bloom?: number }) => {
       if (!mod) return;
       const gl = stage.gl;
       const { createBarBatch, createPipeline, plotMatrix, beginAdditive, endPass, hexToLinear, exposure } = mod;
@@ -181,7 +183,8 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
         // A TRANSPARENT plate: this layer sits on the card's own background, so painting a
         // plate here would draw a dark rectangle over it.
         plate: [0, 0, 0],
-        bloomGain: 0.3,
+        // THE ARRIVAL BLOOM (P5): ×(1 + 2.5·bloom·(1−t)) over the entrance — a changed figure glows once and settles; 0.3 at rest.
+        bloomGain: 0.3 * (1 + 2.5 * (bloom ?? 0) * (1 - t)),
         threshold: [0.3, 1.1],
         vignetteDepth: 0,
         transparent: true,
@@ -194,7 +197,7 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
   );
 
   const { canvasRef, refused } = useFlatChart(draw as never, {
-    width: viewW, height: viewH, deps: [mod, rects, viewW, viewH],
+    width: viewW, height: viewH, deps: [mod, rects, viewW, viewH], bloom,
   });
   // Refused until the module has landed, so the SVG keeps drawing rather than the canvas
   // showing an empty (or another chart's) frame.

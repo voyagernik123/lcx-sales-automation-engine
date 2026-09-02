@@ -5,8 +5,8 @@ import { clsx } from 'clsx';
 import { request } from '@/lib/apiClient';
 import { fetchDealBoard, type BoardDeal } from '@/lib/api/bd';
 import { BarChartH, ChartCard, StatCard } from '@/components/charts';
-import { CardSkeleton, ChartSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
-import { GroupedColumnChart } from '@/components/deals/GroupedColumnChart';
+import { CardSkeleton, ChartSkeleton, EmptyState, ErrorNotice, TableSkeleton } from '@/components/shared';
+import { GroupedColumnChart } from '@/components/charts/GroupedColumnChart';
 import { PageTitle, Button } from '@/components/ui';
 import { EntityChip } from '@/components/entity';
 
@@ -121,7 +121,8 @@ export function WinLoss() {
   const [pool, setPool] = useState<Pool>('all');
   const [period, setPeriod] = useState<Period>('all');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // The error OBJECT (not its message) so ErrorNotice classifies a refused fetch as "no connection" — the KPI desk's lesson.
+  const [error, setError] = useState<unknown>(null);
   const [insightsOpen, setInsightsOpen] = useState(true);
   const [drill, setDrill] = useState<Drill | null>(null);
 
@@ -130,7 +131,7 @@ export function WinLoss() {
     // Out-of-order guard: switching pool refetches — drop a stale response.
     const seq = ++loadSeq.current;
     setLoading(true);
-    setError('');
+    setError(null);
     try {
       // Board deals power the client-side time filter (the win/loss endpoint
       // has no date params). Best-effort: the page works without them.
@@ -143,7 +144,7 @@ export function WinLoss() {
       setBoardDeals(board);
     } catch (err) {
       if (seq !== loadSeq.current) return;
-      setError(err instanceof Error ? err.message : 'Failed to load win/loss');
+      setError(err ?? new Error('Failed to load win/loss'));
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
@@ -244,11 +245,7 @@ export function WinLoss() {
         ))}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-label text-red-600 dark:text-red-400">
-          {error}
-        </div>
-      )}
+      {error != null && <ErrorNotice error={error} onRetry={() => void load()} />}
 
       {loading && !data && (
         <div className="space-y-4">
@@ -448,6 +445,7 @@ export function WinLoss() {
                 <GroupedColumnChart
                   data={data.byJurisdiction.map((b) => ({ label: b.key, values: [b.won, b.lost] }))}
                   series={['Won', 'Lost']}
+                  arrivalKey="winloss:by-jurisdiction"
                 />
               )}
             </ChartCard>
@@ -471,6 +469,7 @@ export function WinLoss() {
                   <GroupedColumnChart
                     data={packageBuckets.map((b) => ({ label: b.key, values: [b.won, b.lost] }))}
                     series={['Won', 'Lost']}
+                    arrivalKey="winloss:by-package"
                   />
                 </div>
               )}
@@ -480,7 +479,7 @@ export function WinLoss() {
               {data.topLossReasons.length === 0 ? (
                 <EmptyState title="No losses recorded" description="Loss reasons appear when a deal is marked lost." />
               ) : (
-                <BarChartH data={data.topLossReasons.map((l) => ({ label: l.reason, value: l.count }))} maxBars={8} />
+                <BarChartH data={data.topLossReasons.map((l) => ({ label: l.reason, value: l.count }))} maxBars={8} arrivalKey="winloss:loss-reasons" />
               )}
             </ChartCard>
 

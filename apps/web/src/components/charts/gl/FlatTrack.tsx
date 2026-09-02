@@ -142,7 +142,7 @@ export function useFlatTrack({ segments, viewW, viewH, radius = 4 }: FlatTrackPr
     && segments.every((s) => HEX.test(s.colour) && s.w > 0 && s.h > 0);
 
   const draw = useCallback(
-    (stage: Stage, { t }: { t: number }) => {
+    (stage: Stage, { t, bloom }: { t: number; bloom?: number }) => {
       if (!mod || !drawable) return;
       const {
         createBarBatch, createPipeline, plotMatrix, beginAdditive, endPass, hexToLinear, exposure,
@@ -192,7 +192,8 @@ export function useFlatTrack({ segments, viewW, viewH, radius = 4 }: FlatTrackPr
         // A TRANSPARENT plate: this layer sits on the card's own background, so painting a
         // plate here would draw a dark rectangle over it.
         plate: [0, 0, 0],
-        bloomGain: 0.3,
+        // THE ARRIVAL BLOOM (P5): ×(1 + 2.5·bloom·(1−t)) over the entrance — a changed figure glows once and settles; 0.3 at rest.
+        bloomGain: 0.3 * (1 + 2.5 * (bloom ?? 0) * (1 - t)),
         threshold: [0.3, 1.1],
         vignetteDepth: 0,
         transparent: true,
