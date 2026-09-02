@@ -121,6 +121,9 @@ async function snapshot(): Promise<HealthResponse> {
     })(),
     /* WHY A SIGN-IN IS BEING REFUSED, when the credential itself is fine. Read from env, so it
        reflects the running process rather than what anyone believes is configured. */
+    // The runtime, stated: Docker moved 20 → 22 on 2026-09-02 (20 was end-of-life) and nothing here said
+    // which major was serving — a control nobody can read back is a control nobody can verify.
+    node: process.version,
     authPaths: {
       deskPasscode: env.deskPasscodeIsPublicDefault ? 'refused-public-default' : 'open',
       secondTier: env.secondaryPasscode ? 'open' : 'disabled',

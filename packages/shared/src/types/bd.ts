@@ -181,6 +181,8 @@ export interface HealthResponse {
    * whose configuration cannot be observed is a control nobody can verify.
    */
   throttleKey: string;
+  /** The API's Node runtime, e.g. `v22.23.1` — stated so the Docker major is verifiable from outside. */
+  node?: string;
   /**
    * WHICH SIGN-IN DOORS ARE ACTUALLY OPEN — because a refused sign-in looked identical to a
    * wrong password, and one of them is fixed in a dashboard while the other is not.
