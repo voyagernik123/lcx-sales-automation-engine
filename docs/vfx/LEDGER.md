@@ -39,7 +39,7 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P0 GALLERY + VISIBILITY INSTRUMENT | DONE · **LIVE** (ba713aa, both surfaces by SHA) | ba713aa | `docs/vfx/GALLERY.md` + `docs/instrument/audit/production-p0/` | baseline: GL visible on 3/79 dark, 4/79 light; median 0%; controls 40.0% and 0 |
 | P1 DARK FIRST + THE STAGE | DONE · **LIVE both surfaces** (Pages: `data-stage` in the entry; Render deployment 6219260694 `success`) | 08cfe3f | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
 | P2 THE CAMERA MOVES | **LIVE** | 530f0d9 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
-| P3 THE FIDELITY STACK | **COMMITTED · verify pending** | sha in §5 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
+| P3 THE FIDELITY STACK | **LIVE** | 5c22d09 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
 | P4 THE EIGHT HEROES (+ desktop 0.4.0) | PENDING | | | |
 | P5 GPU CHARTS EVERYWHERE | PENDING | | | |
 | P6 THE OBJECTS (glTF) | PENDING | | | |
@@ -47,12 +47,13 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P8 HARDENING | PENDING | | | |
 | P9 PRODUCTION GATE + RELEASE | PENDING | | | |
 
-**NEXT ACTION (2026-09-02, late night):** P3 is COMMITTED and pushed (sha in §5's last checkpoint). Run
-`scratchpad/verify-live.sh <sha> --js 'lcx:gl-force-off' --lazy-js 'uInvSize' --css 'edge-hi'`; open the CI run; flip P3 to
-LIVE here and in memory when both surfaces carry the sha and the needles. Then P4 per the session scratchpad `p4/PREP.md`
-(if gone: LEDGER §5 "P4 PREP" + §4): the chrome fade first, the per-PANEL coverage probe, hero fixtures for
-/v1/analytics/map, /v1/audit, /v1/command/deep|readiness, the five heroes through the pipeline + FXAA + studio, E1 as a
-3D gauge, desktop v0.4.0 after.
+**NEXT ACTION (2026-09-03):** P3 is LIVE (5c22d09; verify-live: Pages carries `lcx:gl-force-off` in the shell JS, `uInvSize` in
+a lazy engine chunk and `--edge-hi` in the CSS; Render deployment 6222789643 success; CI run 33632456017 was in progress at
+the flip — open it before the P4 push). P4 begins: follow the session scratchpad `p4/PREP.md` (if gone, §5 "P4 PREP" and §4):
+(1) the chrome fade, measured; (2) the per-PANEL coverage probe (`[data-hero]` rect) in the instrument; (3) hero fixtures
+(`/v1/analytics/map`, `/v1/audit`, `/v1/command/deep|readiness`, POST lp-rescore) in `scripts/instrument-fixtures.mjs`;
+(4) the five heroes through pipeline + FXAA + studio; (5) E1 as a 3D gauge with the deck's figures; (6) gate: each hero ≥ 60%
+of ITS PANEL both themes, data chroma above floor, refusal codes reachable; (7) desktop v0.4.0. Mark P4 IN PROGRESS in §2 first.
 
 ## 3 · STANDING RULES (from the previous programs; every one still binds)
 
@@ -419,3 +420,6 @@ LIVE here and in memory when both surfaces carry the sha and the needles. Then P
   ci-mirror lesson). Procedure from that record: three isolated runs, then the full gate again; the P3 commit waits for a
   clean full run, not for a green re-run of the one file. Every other stage was green (shared 57/1997 · gl 17/359 · api
   169+1 skipped of 171 with 3531/3546 · web and e2e not reached because the api stage failed first).
+- 2026-09-02 · **P3 COMMITTED 5c22d09** (gate run 2 clean; pushed to lcx-sales main). verify-live next; flip to LIVE on report.
+- 2026-09-03 · **P3 LIVE.** 5c22d09 verified on both surfaces (`verify-live.sh 5c22d09 --js 'lcx:gl-force-off' --lazy-js 'uInvSize'
+  --css 'edge-hi'`: PAGES LIVE probe 2, RENDER deployment 6222789643 success). CI 33632456017 in progress at the flip.
