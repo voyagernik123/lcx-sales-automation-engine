@@ -30,7 +30,7 @@ export function ProductIntelligence() {
         {/* TOOLBAR */}
         <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card overflow-x-auto">
           <h1 className="text-lg font-bold shrink-0 flex items-center gap-1.5">
-            <Target size={17} className="text-cyan-500" />
+            <Target size={17} className="text-accent-icon" />
             Product Intelligence
           </h1>
 

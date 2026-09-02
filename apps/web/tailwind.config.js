@@ -46,6 +46,7 @@ export default {
          * asserted in lib/__tests__/contrast.test.ts. */
         control: 'rgb(var(--control-border) / <alpha-value>)',
         card: 'rgb(var(--card) / <alpha-value>)',
+        accent: { icon: 'rgb(var(--accent-icon) / <alpha-value>)', text: 'rgb(var(--accent-text) / <alpha-value>)' },
         page: 'rgb(var(--page-bg) / <alpha-value>)',
         status: {
           ready: 'rgb(var(--green) / <alpha-value>)',

@@ -94,7 +94,7 @@ const FREEZE_ENV = (f) => {
  * reports whether continuity was even attempted. GL contexts are counted at creation. */
 const PROBE = () => {
   const w = /** @type {any} */ (globalThis);
-  const audit = { intervals: new Set(), intervalSites: {}, rafCalls: 0, rafLoops: 0, vt: 0, gl: 0, errors: [] };
+  const audit = { intervals: new Set(), intervalSites: {}, rafCalls: 0, rafLoops: 0, vt: 0, gl: 0, glCanvases: new Set(), errors: [] };
   w.__instrument = audit;
   const si = w.setInterval.bind(w), ci = w.clearInterval.bind(w);
   // EVERY LIVE INTERVAL IS ATTRIBUTED to the source file that created it, so "2 intervals" can
@@ -124,7 +124,12 @@ const PROBE = () => {
   const gc = w.HTMLCanvasElement.prototype.getContext;
   w.HTMLCanvasElement.prototype.getContext = function (kind, ...rest) {
     const ctx = gc.call(this, kind, ...rest);
-    if (ctx && /webgl/.test(String(kind))) audit.gl += 1;
+    // CANVASES, NOT CALLS (close-out open item, 2026-09-02). `getContext('webgl2')` returns the same
+    // context for the same canvas however often it is asked, and a renderer that probes then draws
+    // asks twice — the orrery read as 2 for one live context. The finding is the canvas; `gl` is
+    // the count of DISTINCT canvases still in the document that hold a WebGL context; `glCalls` keeps
+    // the old number beside it so the two can be compared in the record.
+    if (ctx && /webgl/.test(String(kind))) { audit.gl += 1; audit.glCanvases.add(this); }
     return ctx;
   };
   w.addEventListener('error', (e) => audit.errors.push(String(e.message).slice(0, 120)));
@@ -379,7 +384,8 @@ const READ_PAGE = () => {
     intervals: a ? a.intervals.size : -1,
     intervalSites: a ? [...a.intervals].map((id) => a.intervalSites[id] ?? 'unknown') : [],
     rafCalls: a ? a.rafCalls : -1,
-    gl: a ? a.gl : -1,
+    gl: a ? [...a.glCanvases].filter((cv) => cv.isConnected).length : -1,
+    glCalls: a ? a.gl : -1,
     vt: a ? a.vt : -1,
     errors: a ? a.errors.slice(0, 5) : [],
     animations: anims,

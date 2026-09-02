@@ -66,8 +66,19 @@
 | S7 THE OBJECT | DONE · **LIVE both surfaces** (Pages probe 2: entry has `data-object`, GPS chunk has `forge-print.webp`; Render deployment 6214200786 `success`) | 4bb9389 | `docs/instrument/audit/after-s7/BASELINE.md` (dir rides with the close-out commit) | pipeline `scripts/blender/` (build from E8's numbers · render sets Standard explicitly · calibrate · encode with budget · compose); calibration pair Standard **#2C6BFF exact** / AgX #467ECF; five WebP objects 115,284 B incl. sidecars (headroom 300 KB); `/lcxos` hero + sign-in poster via `ForgeStill` (one `<img>` per theme, width/height declared), DMG composite 35,570 B **beside, not wired**, print mark 6,618 B in the GPS dateline; instrument rows for `/lcxos` + `/select` IDENTICAL to after-s6 (no GL, no animation, no timer added); ratchet `oneObject.test.ts` 6/6; gate clean first run |
 | PROGRAM CLOSE-OUT | DONE · **LIVE both surfaces** (Pages probe 1; Render deployment 6214724466 `success`) | b4680aa | `docs/instrument/audit/after-s7-full/` (79 × 2, fixtures ON, corrected probe) + `docs/instrument/SCORECARD.md` | S0 → close-out: vt 0 → 76 · motion at rest 77 → **0** · rAF loops 76 → 0 · GL 77 → 1 · intervals 9 → 2 · errors 0; found + fixed: 62 React Flow marching edges (`animated: false`, ratchet) AND the instrument's own probe-order defect (at-rest sampled after navigate-back); `/select` rAF 4 → 5 the only route worse (designed idle); gate clean twice; scorecard filled from bytes |
 
-**NEXT ACTION (2026-09-02):** The program is COMPLETE and VERIFIED LIVE — S0–S7 and the close-out b4680aa (Pages
-probe 1; Render 6214724466 `success`). There is NOTHING left in this program to build; §4 is the whole list — the owner's items (APPLY_GPS_PACKETS.sql → 0083,
+**NEXT ACTION (2026-09-02, PENDING PASS):** the pass's code is in tree (see §5 "POST-PROGRAM PENDING PASS"); gate run 2
+is RUNNING. When clean: (1) three-run flake procedure on BriefGenerator / silenceAndProvenance / marketingCrisis + api
+`distGate.test.ts` (in isolation ×3; the four gates today were green) and record; (2) commit with
+`scratchpad/pending-commit-msg.txt` (fill the gate line); push `lcx-sales dev:main`; `verify-live.sh <sha> --js
+'Idempotency-Key'` + `curl -sI <pages>/select | grep -i content-security-policy` (the `_headers` file is live only if
+that header appears) + Render deployment `success` on Node 22 (`/health` up); open the CI run and confirm GREEN — the
+first green since S2; (3) DESKTOP 0.3.0: `TAURI_SIGNING_PRIVATE_KEY=~/.lcx-terminal/updater.key npm run build:dmg -w
+@lcx/desktop` (its build-gate composes ci-check), then `npm run release:dry -w @lcx/desktop`, fix `LCXOS_DMG_MB` if the
+size guard refuses (then re-gate + amend the web commit BEFORE publishing — the release records the commit), then
+`npm run release -w @lcx/desktop`; verify `latest.json` on the releases repo says 0.3.0 and the script's CDN
+signature check passed; `ditto` the built .app over `/Applications/LCXOS.app` (applies next launch);
+`verify-app-renders.mjs`; (4) LEDGER §2 row for the pass → DONE · LIVE; memory. The program itself is COMPLETE and
+VERIFIED LIVE — S0–S7 and the close-out b4680aa. There is NOTHING left in this program to build; §4 is the whole list — the owner's items (APPLY_GPS_PACKETS.sql → 0083,
 partner + rate card, coordination hours, Monty's perimeter review, the regulatory dataset's date, the DMG plate's one
 look) and three small engineering items (drift-in-frames probe, canvases-not-calls census, the dead `.animate-fadeIn`
 class). Surface them; do not start them unasked. Do not re-plan. Do not re-derive §1.
@@ -355,7 +366,7 @@ referenced from CI config.
 - **GPS:** owner has not yet run `APPLY_GPS_PACKETS.sql`; migration `0083` stays in `PENDING_MIGRATIONS` until
   his six-line verification arrives, then moves to SHIPPED with its digest.
 - **GPS:** named partner + rate card (owner), coordination hours (owner), Monty's perimeter review at launch.
-- **Web:** worker-shift flake class (BriefGenerator, silenceAndProvenance, marketingCrisis) — task chip open.
+- **Web:** worker-shift flake class (BriefGenerator, silenceAndProvenance, marketingCrisis) — task chip open. **2026-09-02:** the three-run procedure is run in the pending pass (§5); result recorded there.
 - **API:** `routes/__tests__/distGate.test.ts` "lets a NON-token campaign advance to live freely" returned 403 in
   the S2 full gate, passes in isolation, API tree untouched by S2 — same order-dependent class. Re-run per the
   3-run procedure before any claim; if it recurs, it is a latent race in the test's fixture isolation, not S2.
@@ -363,20 +374,28 @@ referenced from CI config.
   `Math.random` simulation every 4 s that fabricates "System" log lines (`isReal: false`) and merges them
   with real audit rows — indistinguishable on screen.~~ **CLOSED by S1 (6e0e939):** the simulation is deleted; the
   panel shows only real audit rows and says so when there are none.
-- **INSTRUMENT (close-out, 2026-09-02):** clock DRIFT was never measured as frames — S1's stated target was
-  "0 frames"; the instrument measures loops and intervals (both at their floor). A drift probe = two surfaces asked
-  for "now" inside one frame, difference in frames. Not built; the scorecard says so.
-- **INSTRUMENT:** the GL census counts `getContext` CALLS, not distinct canvases (`/ontology` orrery read 2 for
-  one live context in S5/S6). Count canvases with a live context instead.
-- **OWNER:** `/regulatory-dashboard` figures read UNDATED because the compiled dataset carries no instant — the
-  dataset needs a date, then `<Fig>` dates them without a code change.
-- **WEB (found by the close-out attribution):** `.animate-fadeIn` is used by `KpiTicker.tsx:84`,
-  `SidebarFieldNotes.tsx:42`, `SelectOperator.tsx:164`, `intel/DraftPanel.tsx:61` and DEFINED NOWHERE (globals.css
-  has `@keyframes fadeIn` but no class; tailwind.config has no `fadeIn` animation) — those four never animated.
-  Either define it as a 0.2 s one-shot or delete the four class names; a measurement is not the place to decide.
-- **OWNER (one look):** `apps/desktop/scripts/dmg-plate.rendered.png` (the Forge composited on the generated plate,
-  35,570 B) sits BESIDE `dmg-plate.png`; `tauri.conf.json:54` still points at the generated one. Wiring is one
-  path change after Nik has looked.
+- ~~**INSTRUMENT (close-out, 2026-09-02):** clock DRIFT was never measured as frames~~ **CLOSED AS UNMEASURABLE BY
+  CONSTRUCTION (2026-09-02):** after S1 there is ONE clock; drift between two surfaces requires two. A probe whose
+  answer is 0 by design would be a weak success condition, not a measurement. The scorecard's sentence stands.
+- ~~**INSTRUMENT:** the GL census counts `getContext` CALLS, not distinct canvases~~ **CLOSED 2026-09-02:** `gl` is now
+  the count of distinct CONNECTED canvases holding a WebGL context; `glCalls` travels beside it. Measured: `/ontology`
+  1 canvas / 2 calls, `/select` 1 / 1, `/command-deck` 0 / 0.
+- ~~**OWNER:** `/regulatory-dashboard` figures read UNDATED~~ **CLOSED 2026-09-02:** the record carries its own
+  revision day, `DATA_REVISED_AT` in `apps/web/src/data/index.ts`; all six figures are dated by it (record AND
+  derived — a figure derived from a dated record is dated by it); `dataRevision.test.ts` holds the constant to the
+  last commit touching `src/data` on full clones.
+- ~~**WEB:** `.animate-fadeIn` used at four sites and defined nowhere~~ **CLOSED 2026-09-02:** the four class names
+  are removed (no behaviour changed — they never animated).
+- ~~**OWNER (one look):** the DMG plate~~ **WIRED 2026-09-02 by owner instruction** ("whatever is left, get it all
+  done"): `tauri.conf.json` `dmg.background` → `dmg-plate.rendered.png` (1320×840, 35,591 B, pHYs 144 dpi so Finder
+  shows it at 660×420 pt — `topNavChrome.test.tsx` pins the density). The generated plate stays beside it; reverting
+  is one path.
+- **OWNER, STILL:** the GPS items (`APPLY_GPS_PACKETS.sql` → 0083, partner + rate card, coordination hours, Monty's
+  perimeter review) — excluded from the 2026-09-02 pass by instruction. Plus: `DATABASE_URL` GitHub Actions secret
+  (owner), Render `TRUSTED_PROXY_HOPS` mirrored into `render.yaml` (dashboard-only today), Cloudflare Pages rename
+  (CORS first), Apple Developer enrollment (declined 2026-08-18, a decision), the E7 forward-risk feed (product
+  decision; no data to light it), the three prod test-draft `dist_campaigns` rows (one SQL DELETE, needs DB access),
+  updater signing-key rotation (a two-release dance; his decision where the new key lives).
 
 ## 5 · CHECKPOINT LOG — append-only, newest last
 
@@ -830,3 +849,30 @@ referenced from CI config.
   `scratchpad/fill-scorecard.mjs` (no number typed from memory; placeholders left: none). Gate running for the
   close-out commit (code: `useGraph.ts`, `OntologyExplorer.tsx`, `oneWatch.test.ts`, `instrument-audit.mjs`; docs:
   SCORECARD, LEDGER, `after-s7/`, `after-s7-full/`).
+- 2026-09-02 · **POST-PROGRAM PENDING PASS** (owner: "whatever is left, get it all done — apart from GPS — across the
+  web, and push a new update to the application"). Inventory from six sources (§4 here, the TERMINAL pending ledger,
+  AUDIT_PENTEST "still open", SECURITY_FINDINGS 08-07 "owed", the red-team follow-ons, `nik-outstanding-items`),
+  every item verified against the code before acting. **FIRST FINDING: CI on the code repo was RED for four commits
+  (S6, S7, close-out, docs) while the root gate was green** — `e2e/hints.spec.ts:381` waited ONE frame for a click's
+  mutation; since S3 the click navigates inside a view transition whose callback runs 1–3 frames later; the gate does
+  not run e2e. Fixed (bounded wait, frames reported; 17/17 locally). CLOSED WITH EVIDENCE: CSP on web prod
+  (`gen-headers.mjs` from the built bytes, 2 inline hashes; `verify-headers.mjs` 5 routes / 0 violations, negative
+  control listed 6) + desktop `csp`; `Idempotency-Key` minted at `request()`; readiness panel re-reads live after a
+  write; manual Escape handoff (host bridges the lazy window, body stays the owner — a first cut that moved the
+  registration to the host broke `hintScope.test.ts`'s true claim that ref, role and registration live together, and
+  was withdrawn); docked pane cursor-moved line; `computeKpis` 14 reads together; `readReuse` invalid-date guard;
+  portal mock `getDb`; `DATA_REVISED_AT`; 9 `as any`; 4 dead `animate-fadeIn`; `text-cyan-500` ×57 → `--accent-icon`
+  / `--accent-text` (+ paper pins, 4 ratios pinned); Node 22 (Docker/CI/engines — 20 was EOL); GL census by canvas;
+  ⌘K harness parser (7 → 24 of 30, pin 23 → 6, reason recorded); partner terms from the keyboard (practice text
+  corrected, path pinned); version **0.3.0** in six homes; DMG plate WIRED with pHYs 144 dpi (the first composite
+  lacked the density chunk and `topNavChrome.test.tsx` refused it — Finder would have shown a quarter of the plate).
+  CLOSED BY DESIGN, NOT CODE: the desk-door throttle (a lockout broke the pinned warm-caller property); the junk
+  X-API-Key buckets (already one `opaque` bucket since 08-16). DECIDED: T1 #13 two modes CUT per the ship plan;
+  T1 #4's "not you?" prompt not built (front door starts empty; TopNav has Sign out). Gate run 1 red on two true
+  ratchets (hintScope after the first manual cut; the plate's density) → both fixed. Gate run 2: 2,768/2,768 web
+  tests green and the run FAILED on an unhandled rejection — `FactoryPanel.load` wrote state after the document was
+  torn down (its fetch is unmocked in `gpsLegalPositionStamp.test`; adding four test files shifted the worker
+  layout, exactly `vitest-file-count-shifts-workers`). `alive` ref guards in FactoryPanel + TriageAssessment.
+  THREE-RUN PROCEDURE: gpsLegalPositionStamp + BriefGenerator + marketingCrisis 3× in isolation = 80/80 each;
+  api `distGate` 3× green; six full-gate API stages today without a recurrence → the flake class is recorded as NOT
+  REPRODUCING (the chips can close), not as fixed by hand. Gate run 3 running.

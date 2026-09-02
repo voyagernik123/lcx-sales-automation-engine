@@ -222,8 +222,8 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
   const SortIcon = ({ field }: { field: CompetitorSortField }) => {
     if (sortField !== field) return <ArrowUpDown size={11} className="inline opacity-30" />;
     return sortDir === 'asc'
-      ? <ChevronUp size={13} className="inline text-cyan-500" />
-      : <ChevronDown size={13} className="inline text-cyan-500" />;
+      ? <ChevronUp size={13} className="inline text-accent-icon" />
+      : <ChevronDown size={13} className="inline text-accent-icon" />;
   };
 
   const renderCell = (c: Competitor, col: ColumnDef) => {
@@ -331,7 +331,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         </span>
         <span className="flex items-center gap-1">
           {c.licenses.spdiCharter || c.licenses.nyTrustCharter || c.licenses.occTrustCharter
-            ? <Shield size={12} className="text-cyan-500" />
+            ? <Shield size={12} className="text-accent-icon" />
             : <X size={12} className="text-grey" />
           }
           <span className={c.licenses.spdiCharter || c.licenses.nyTrustCharter || c.licenses.occTrustCharter ? '' : 'text-grey'}>
@@ -354,7 +354,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       <td className="p-2.5 whitespace-nowrap">
         <div className="flex items-center gap-2">
           <span className="font-bold text-xs text-cyan-700 dark:text-cyan-400">LCX USA</span>
-          <span className="text-[9px] font-mono text-cyan-500 bg-cyan-50 dark:bg-cyan-950/20 px-1 rounded tracking-tight">
+          <span className="text-[9px] font-mono text-accent-text bg-cyan-50 dark:bg-cyan-950/20 px-1 rounded tracking-tight">
             PROJECTED
           </span>
         </div>
@@ -648,7 +648,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-sm text-cyan-700 dark:text-cyan-400">LCX USA</span>
-                  <span className="text-[9px] font-mono text-cyan-500 bg-cyan-50 dark:bg-cyan-950/20 px-1.5 rounded tracking-tight">
+                  <span className="text-[9px] font-mono text-accent-text bg-cyan-50 dark:bg-cyan-950/20 px-1.5 rounded tracking-tight">
                     PROJECTED (Phase 1–3)
                   </span>
                 </div>

@@ -167,7 +167,7 @@ export function ScenarioPlanner() {
                       type="checkbox"
                       checked={active}
                       readOnly
-                      className="rounded border-grey/40 text-cyan-500 focus:ring-0 cursor-pointer h-4 w-4"
+                      className="rounded border-grey/40 text-accent-text focus:ring-0 cursor-pointer h-4 w-4"
                     />
                   </div>
                   <p className="text-micro text-grey-dark mt-1.5 leading-normal">{sc.desc}</p>
@@ -201,7 +201,7 @@ export function ScenarioPlanner() {
           <div className="flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-micro overflow-hidden h-full">
             <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
               <span className="uppercase text-[9px] font-bold text-cyan-400">Simulated Compliance Rules</span>
-              <Terminal size={11} className="text-cyan-500" />
+              <Terminal size={11} className="text-accent-icon" />
             </div>
             <div className="flex-1 p-4 overflow-y-auto space-y-3 font-mono leading-relaxed text-slate-300">
               {afterRules.map((rule, idx) => (

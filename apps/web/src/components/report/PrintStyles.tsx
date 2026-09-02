@@ -134,6 +134,8 @@ export function PrintStyles() {
        Keep in step with the generated block (npm run gen:tokens -w apps/web). */
     --ground: 232 237 246;
     --structure: 195 206 224;
+    --accent-icon: 8 145 178;
+    --accent-text: 14 116 144;
     --sky-horizon: 220 229 243;
     --sky-zenith: 244 247 252;
   }

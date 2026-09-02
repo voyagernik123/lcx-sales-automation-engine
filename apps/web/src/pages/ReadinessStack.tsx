@@ -154,7 +154,7 @@ export function ReadinessStack() {
               <div className="text-[9px] text-grey uppercase font-bold tracking-wider">Overall Controls Completed</div>
               <div className="text-micro text-grey-dark">{completeCount} of {total} verified</div>
             </div>
-            <span className="text-2xl font-extrabold text-cyan-500">{progressPercent}%</span>
+            <span className="text-2xl font-extrabold text-accent-text">{progressPercent}%</span>
           </div>
         }
       >

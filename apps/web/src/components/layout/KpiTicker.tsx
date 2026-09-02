@@ -81,7 +81,7 @@ export function KpiTicker() {
         <button
           key={index}
           onClick={() => navigate(all[index].to)}
-          className="animate-fadeIn font-mono text-[10px] font-medium tracking-wide text-grey transition-colors hover:text-navy"
+          className="font-mono text-[10px] font-medium tracking-wide text-grey transition-colors hover:text-navy"
         >
           {all[index].text}
         </button>

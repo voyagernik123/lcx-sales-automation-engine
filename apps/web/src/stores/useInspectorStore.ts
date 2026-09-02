@@ -40,6 +40,14 @@ export interface InspectorTarget {
 
 interface InspectorStore {
   stack: InspectorTarget[];
+  /**
+   * THE SURFACE'S CURSOR, so the docked pane can say when it has stopped describing the row
+   * the verbs will hit (TERMINAL Phase F open item 0, 2026-09-02). `lib/split.ts` records that
+   * the pane does NOT follow `j`/`k`; this makes the mismatch visible instead of documented.
+   * Written by the surface that owns a cursor (the BD queue's `move`/peek), cleared on unmount.
+   */
+  cursor: { type: InspectorEntityType; id: string } | null;
+  setCursor: (cursor: { type: InspectorEntityType; id: string } | null) => void;
   open: (type: InspectorEntityType, id: string, seed?: Record<string, unknown>) => void;
   /** Drill deeper without losing the trail. */
   push: (type: InspectorEntityType, id: string, seed?: Record<string, unknown>) => void;
@@ -51,6 +59,8 @@ interface InspectorStore {
 
 export const useInspectorStore = create<InspectorStore>(set => ({
   stack: [],
+  cursor: null,
+  setCursor: cursor => set({ cursor }),
   open: (type, id, seed) => set({ stack: [{ type, id, seed }] }),
   push: (type, id, seed) => set(s => ({ stack: [...s.stack, { type, id, seed }] })),
   back: () => set(s => ({ stack: s.stack.slice(0, -1) })),

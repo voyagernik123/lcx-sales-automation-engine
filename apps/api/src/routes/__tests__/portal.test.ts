@@ -43,6 +43,10 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('../../db/index.js', () => ({
+  // `notify` (the courtesy after the audit row) writes through drizzle; the mock used to omit
+  // `getDb`, so every notification threw inside its catch and the log filled with a vitest
+  // error while the assertion above it passed. A quiet no-op keeps the test about the portal.
+  getDb: () => ({ insert: () => ({ values: () => ({ onConflictDoNothing: async () => [], returning: async () => [] }) }), select: () => ({ from: () => ({ where: async () => [] }) }) }),
   getPool: () => ({
     query: async (sql: string, params: unknown[] = []) => {
       state.queries.push({ sql, params });

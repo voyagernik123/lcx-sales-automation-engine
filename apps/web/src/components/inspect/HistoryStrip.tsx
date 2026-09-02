@@ -42,7 +42,7 @@ export function HistoryStrip({ entries, max = 5, title = 'History', loading }: H
     <div>
       {title !== null && (
         <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
-          <History size={11} className="text-cyan-500" />
+          <History size={11} className="text-accent-icon" />
           {title}
         </div>
       )}

@@ -272,7 +272,7 @@ export function SessionMode({
             {/* Last-touch context */}
             {context && (
               <div className="flex items-start gap-2 rounded border border-line bg-ice-soft dark:bg-navy-deep px-3 py-2 mb-4">
-                <MessageSquare size={13} className="text-cyan-500 mt-0.5 shrink-0" />
+                <MessageSquare size={13} className="text-accent-icon mt-0.5 shrink-0" />
                 <p className="text-xs leading-snug">{context}</p>
               </div>
             )}

@@ -39,30 +39,31 @@ export interface KpiDashboard {
 export async function computeKpis(): Promise<KpiDashboard> {
   const db = getDb();
 
-  const newScoreRow = await db.execute(sql`
+  /*
+   * FOURTEEN INDEPENDENT READS, ISSUED TOGETHER (red-team follow-on, closed 2026-09-02).
+   * They were awaited one after another — a dashboard that cost fourteen round trips in
+   * series. None reads another's result, so they are started at once and awaited once; the
+   * ORDER of the array is the order the statements used to run in, so a test that answers
+   * `execute` calls in sequence sees the same sequence. The pool serialises what it must.
+   */
+  const count = (r: { rows?: unknown[] }) => Number((r.rows?.[0] as Record<string, unknown> | undefined)?.count ?? 0);
+  const [
+    newScoreRow, enrolledRow, repliedRow, proposalRow, wonRow, handoffsRow, movedRow,
+    replyRows, ftthResult, htpResult, ptwResult, revRows, objRows, stalledRows, expansionResult,
+  ] = await Promise.all([
+    db.execute(sql`
     SELECT COUNT(*) AS count
     FROM scores s
     WHERE s.band IN ('immediate', 'high')
       AND s.computed_at >= NOW() - INTERVAL '7 days'
-  `);
-  const newHighScoreLeadsThisWeek = Number((newScoreRow.rows?.[0] as Record<string, unknown> | undefined)?.count ?? 0);
-
-  const enrolled = Number((await db.execute(sql`SELECT COUNT(*) AS count FROM sequence_enrollments`)).rows?.[0]?.count ?? 0);
-  const replied = Number((await db.execute(sql`SELECT COUNT(DISTINCT project_id) AS count FROM handoffs`)).rows?.[0]?.count ?? 0);
-  const proposal = Number((await db.execute(sql`SELECT COUNT(*) AS count FROM deals WHERE stage IN ('proposal', 'negotiating', 'won')`)).rows?.[0]?.count ?? 0);
-  const totalWon = Number((await db.execute(sql`SELECT COUNT(*) AS count FROM deals WHERE stage = 'won'`)).rows?.[0]?.count ?? 0);
-
-  const funnel = { enrolled, replied, proposal, won: totalWon };
-
-  const totalHandoffs = Number((await db.execute(sql`SELECT COUNT(*) AS count FROM handoffs`)).rows?.[0]?.count ?? 0);
-  const movedToTelegram = Number((await db.execute(sql`SELECT COUNT(DISTINCT handoff_id) AS count FROM handoff_events WHERE event_type = 'moved_to_telegram'`)).rows?.[0]?.count ?? 0);
-  const telegramConversion = {
-    handoffs: totalHandoffs,
-    moved: movedToTelegram,
-    rate: totalHandoffs > 0 ? Math.round((movedToTelegram / totalHandoffs) * 100) : 0,
-  };
-
-  const replyRows = await db.execute(sql`
+  `),
+    db.execute(sql`SELECT COUNT(*) AS count FROM sequence_enrollments`),
+    db.execute(sql`SELECT COUNT(DISTINCT project_id) AS count FROM handoffs`),
+    db.execute(sql`SELECT COUNT(*) AS count FROM deals WHERE stage IN ('proposal', 'negotiating', 'won')`),
+    db.execute(sql`SELECT COUNT(*) AS count FROM deals WHERE stage = 'won'`),
+    db.execute(sql`SELECT COUNT(*) AS count FROM handoffs`),
+    db.execute(sql`SELECT COUNT(DISTINCT handoff_id) AS count FROM handoff_events WHERE event_type = 'moved_to_telegram'`),
+    db.execute(sql`
     SELECT
       p.source,
       COALESCE(os.channel, 'email') AS channel,
@@ -73,7 +74,74 @@ export async function computeKpis(): Promise<KpiDashboard> {
     LEFT JOIN messages m ON m.sequence_id = os.id AND m.status = 'sent'
     LEFT JOIN handoffs h ON h.project_id = p.id
     GROUP BY p.source, os.channel
-  `);
+  `),
+    db.execute(sql`
+    SELECT AVG(EXTRACT(EPOCH FROM (h.created_at - m.sent_at)) / 86400) AS avg_days
+    FROM handoffs h
+    JOIN messages m ON m.project_id = h.project_id AND m.status = 'sent'
+    WHERE m.sent_at IS NOT NULL AND h.created_at >= m.sent_at
+  `),
+    db.execute(sql`
+    SELECT AVG(EXTRACT(EPOCH FROM (de.created_at - h.created_at)) / 86400) AS avg_days
+    FROM deals d
+    JOIN deal_events de ON de.deal_id = d.id AND de.event_type = 'stage_change' AND de.new_stage = 'proposal'
+    JOIN handoffs h ON h.project_id = d.project_id
+    WHERE de.created_at >= h.created_at
+  `),
+    db.execute(sql`
+    SELECT AVG(EXTRACT(EPOCH FROM (d.won_at - de.created_at)) / 86400) AS avg_days
+    FROM deals d
+    JOIN deal_events de ON de.deal_id = d.id AND de.event_type = 'stage_change' AND de.new_stage = 'proposal'
+    WHERE d.won_at IS NOT NULL AND d.won_at >= de.created_at
+  `),
+    db.execute(sql`
+    SELECT package_type, COALESCE(SUM(package_value), 0) AS total
+    FROM deals WHERE stage = 'won' GROUP BY package_type
+  `),
+    db.execute(sql`
+    SELECT category, COUNT(*) AS count
+    FROM deal_objections GROUP BY category ORDER BY count DESC LIMIT 10
+  `),
+    db.execute(sql`
+    SELECT d.id, p.name AS project_name, d.stage,
+      EXTRACT(DAY FROM (NOW() - d.updated_at)) AS days_since_update,
+      COALESCE(
+        (SELECT string_agg(do2.description, '; ') FROM deal_objections do2 WHERE do2.deal_id = d.id AND do2.resolved = false LIMIT 1),
+        'No blockers logged'
+      ) AS blocker
+    FROM deals d
+    JOIN projects p ON p.id = d.project_id
+    WHERE d.stage NOT IN ('won', 'lost', 'not_started')
+      AND d.updated_at <= NOW() - INTERVAL '3 days'
+    ORDER BY d.updated_at ASC
+  `),
+    db.execute(sql`
+    SELECT
+      COUNT(DISTINCT wd.project_id) AS with_expansion,
+      COALESCE(SUM(ed.package_value), 0) AS expansion_revenue
+    FROM deals wd
+    JOIN deals ed ON ed.project_id = wd.project_id
+    WHERE wd.stage = 'won'
+      AND ed.id != wd.id
+      AND ed.stage IN ('won', 'negotiating', 'proposal')
+  `),
+  ]);
+  const newHighScoreLeadsThisWeek = count(newScoreRow);
+
+  const enrolled = count(enrolledRow);
+  const replied = count(repliedRow);
+  const proposal = count(proposalRow);
+  const totalWon = count(wonRow);
+
+  const funnel = { enrolled, replied, proposal, won: totalWon };
+
+  const totalHandoffs = count(handoffsRow);
+  const movedToTelegram = count(movedRow);
+  const telegramConversion = {
+    handoffs: totalHandoffs,
+    moved: movedToTelegram,
+    rate: totalHandoffs > 0 ? Math.round((movedToTelegram / totalHandoffs) * 100) : 0,
+  };
 
   const byChannel: Record<string, { sent: number; replied: number }> = {};
   const bySource: Record<string, { sent: number; replied: number }> = {};
@@ -102,69 +170,29 @@ export async function computeKpis(): Promise<KpiDashboard> {
     replyRateBySource[src] = { ...stats, rate: stats.sent > 0 ? Math.round((stats.replied / stats.sent) * 100) : 0 };
   }
 
-  const ftthResult = await db.execute(sql`
-    SELECT AVG(EXTRACT(EPOCH FROM (h.created_at - m.sent_at)) / 86400) AS avg_days
-    FROM handoffs h
-    JOIN messages m ON m.project_id = h.project_id AND m.status = 'sent'
-    WHERE m.sent_at IS NOT NULL AND h.created_at >= m.sent_at
-  `);
   const avgDaysFirstTouchToHandoff = ftthResult.rows?.length
     ? Math.round(Number((ftthResult.rows?.[0] as Record<string, unknown> | undefined)?.avg_days ?? 0))
     : null;
 
-  const htpResult = await db.execute(sql`
-    SELECT AVG(EXTRACT(EPOCH FROM (de.created_at - h.created_at)) / 86400) AS avg_days
-    FROM deals d
-    JOIN deal_events de ON de.deal_id = d.id AND de.event_type = 'stage_change' AND de.new_stage = 'proposal'
-    JOIN handoffs h ON h.project_id = d.project_id
-    WHERE de.created_at >= h.created_at
-  `);
   const avgDaysHandoffToProposal = htpResult.rows?.length
     ? Math.round(Number((htpResult.rows?.[0] as Record<string, unknown> | undefined)?.avg_days ?? 0))
     : null;
 
-  const ptwResult = await db.execute(sql`
-    SELECT AVG(EXTRACT(EPOCH FROM (d.won_at - de.created_at)) / 86400) AS avg_days
-    FROM deals d
-    JOIN deal_events de ON de.deal_id = d.id AND de.event_type = 'stage_change' AND de.new_stage = 'proposal'
-    WHERE d.won_at IS NOT NULL AND d.won_at >= de.created_at
-  `);
   const avgDaysProposalToWon = ptwResult.rows?.length
     ? Math.round(Number((ptwResult.rows?.[0] as Record<string, unknown> | undefined)?.avg_days ?? 0))
     : null;
 
-  const revRows = await db.execute(sql`
-    SELECT package_type, COALESCE(SUM(package_value), 0) AS total
-    FROM deals WHERE stage = 'won' GROUP BY package_type
-  `);
   const revenueByStream: Record<string, number> = { listing: 0, marketing: 0, liquidity: 0, dual: 0, emt: 0, custom: 0 };
   for (const r of (revRows.rows ?? [])) {
     const row = r as Record<string, unknown>;
     revenueByStream[String(row.package_type ?? 'custom')] = Number(row.total ?? 0);
   }
 
-  const objRows = await db.execute(sql`
-    SELECT category, COUNT(*) AS count
-    FROM deal_objections GROUP BY category ORDER BY count DESC LIMIT 10
-  `);
   const topObjections = (objRows.rows ?? []).map((r: Record<string, unknown>) => ({
     category: String(r.category ?? 'unknown'),
     count: Number(r.count ?? 0),
   }));
 
-  const stalledRows = await db.execute(sql`
-    SELECT d.id, p.name AS project_name, d.stage,
-      EXTRACT(DAY FROM (NOW() - d.updated_at)) AS days_since_update,
-      COALESCE(
-        (SELECT string_agg(do2.description, '; ') FROM deal_objections do2 WHERE do2.deal_id = d.id AND do2.resolved = false LIMIT 1),
-        'No blockers logged'
-      ) AS blocker
-    FROM deals d
-    JOIN projects p ON p.id = d.project_id
-    WHERE d.stage NOT IN ('won', 'lost', 'not_started')
-      AND d.updated_at <= NOW() - INTERVAL '3 days'
-    ORDER BY d.updated_at ASC
-  `);
   const stalledDeals = (stalledRows.rows ?? []).map((r: Record<string, unknown>) => ({
     id: String(r.id ?? ''),
     projectName: String(r.project_name ?? 'Unknown'),
@@ -173,16 +201,6 @@ export async function computeKpis(): Promise<KpiDashboard> {
     blocker: String(r.blocker ?? ''),
   }));
 
-  const expansionResult = await db.execute(sql`
-    SELECT
-      COUNT(DISTINCT wd.project_id) AS with_expansion,
-      COALESCE(SUM(ed.package_value), 0) AS expansion_revenue
-    FROM deals wd
-    JOIN deals ed ON ed.project_id = wd.project_id
-    WHERE wd.stage = 'won'
-      AND ed.id != wd.id
-      AND ed.stage IN ('won', 'negotiating', 'proposal')
-  `);
   const expRow = expansionResult.rows?.[0] as Record<string, unknown> | undefined;
   const withExpansion = Number(expRow?.with_expansion ?? 0);
   const expansionRevenue = Number(expRow?.expansion_revenue ?? 0);

@@ -1,4 +1,4 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -13,7 +13,7 @@ RUN npm pkg set -w @lcx/shared main=./dist/index.js types=./dist/index.d.ts \
   'exports[.].types=./dist/index.d.ts' 'exports[.].import=./dist/index.js' 'exports[.].default=./dist/index.js'
 RUN npm prune --omit=dev
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 RUN addgroup --system app && adduser --system --ingroup app app
 COPY --from=build /app/node_modules node_modules

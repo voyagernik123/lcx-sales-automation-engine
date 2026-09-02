@@ -82,7 +82,7 @@ export function CapitalEstimator() {
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs font-bold uppercase text-grey-dark">
               <span>Bond Bank Collateral</span>
-              <span className="font-mono text-cyan-500">{leverageRatio}%</span>
+              <span className="font-mono text-accent-text">{leverageRatio}%</span>
             </div>
             <input
               type="range"
@@ -101,7 +101,7 @@ export function CapitalEstimator() {
           <div className="space-y-1.5 pt-2 border-t border-line">
             <div className="flex justify-between text-xs font-bold uppercase text-grey-dark">
               <span>Monthly Launch Runrate</span>
-              <span className="font-mono text-cyan-500">${(monthlyBurn / 1000).toFixed(0)}K</span>
+              <span className="font-mono text-accent-text">${(monthlyBurn / 1000).toFixed(0)}K</span>
             </div>
             <input
               type="range"
@@ -145,7 +145,7 @@ export function CapitalEstimator() {
             <Card className="bg-cyan-500/5 dark:bg-cyan-500/2 border-cyan-500/30">
               <CardBody className="p-3">
                 <span className="text-[9px] uppercase tracking-wider text-cyan-700 dark:text-cyan-400 block font-bold">Aggregate Reserves Required</span>
-                <span className="text-lg font-bold font-mono text-cyan-500 block mt-1">${calculations.totalReserve.toLocaleString()}</span>
+                <span className="text-lg font-bold font-mono text-accent-text block mt-1">${calculations.totalReserve.toLocaleString()}</span>
               </CardBody>
             </Card>
           </div>

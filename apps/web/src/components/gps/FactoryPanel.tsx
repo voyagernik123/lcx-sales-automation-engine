@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { clsx } from 'clsx';
 import { Badge, Button, Card, CardBody, CardHeader, Input } from '@/components/ui';
 import { ApiError, request } from '@/lib/apiClient';
@@ -65,12 +65,24 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
   const [actual, setActual] = useState({ stage: 'ai_draft', hours: '', note: '' });
   const [showHandover, setShowHandover] = useState(false);
 
+  /*
+   * ALIVE, checked after every await. A load that resolves (or rejects) after this panel has
+   * unmounted must not write state: React drops the write, but under a test runner the document
+   * is gone by then and the write throws `window is not defined` as an UNHANDLED rejection —
+   * which failed a gate run in which every one of 2,768 tests had passed (2026-09-02). The same
+   * class as the worker-shift flakes the ledger names; the fix is the component's, not the test's.
+   */
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+
   const load = useCallback(async () => {
     try {
       const res = await request<{ data: FactoryData }>(`/v1/gps/factory/engagements/${engagementId}`);
+      if (!alive.current) return;
       setData(res.data);
       setError(null);
     } catch (err) {
+      if (!alive.current) return;
       setError(err instanceof ApiError ? `${err.code ?? 'ERROR'}: ${err.message}` : String(err));
     }
   }, [engagementId]);
@@ -85,6 +97,7 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
       await fn();
       await load();
     } catch (err) {
+      if (!alive.current) return;
       if (err instanceof ApiError && err.code === 'SLOTS_MISSING') {
         const d = (err.data ?? {}) as { gaps?: Array<{ label: string }> };
         setGaps(d.gaps ?? []);
@@ -92,7 +105,7 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
         setActionError(err instanceof ApiError ? `${err.code ?? 'ERROR'}: ${err.message}` : String(err));
       }
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }, [load]);
 

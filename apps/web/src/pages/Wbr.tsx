@@ -352,7 +352,7 @@ function SparkCard({ spark }: { spark: WbrSparkline }) {
         {spark.unit === 'usd_cents' ? `$${Math.round(last / 100).toLocaleString('en-US')}` : last.toLocaleString('en-US')}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 h-8 w-full" preserveAspectRatio="none">
-        <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-cyan-500" />
+        <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent-icon" />
       </svg>
     </div>
   );

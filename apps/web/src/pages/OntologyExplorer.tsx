@@ -169,11 +169,11 @@ export function OntologyExplorer() {
 
   const searchMatches = useMemo(() => {
     if (!searchQuery || searchQuery.length < 2) return [];
-    return nodes.filter(n => ((n.data as any).node as RegulatoryNode).label.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5);
+    return nodes.filter(n => (n.data as unknown as { node: RegulatoryNode }).node.label.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5);
   }, [searchQuery, nodes]);
 
   const handleSearchSelect = (n: any) => {
-    const rn = (n.data as any).node as RegulatoryNode;
+    const rn = (n.data as unknown as { node: RegulatoryNode }).node;
     setSelectedNodeId(n.id);
     setSelectedNode(rn);
     setSearchQuery('');
@@ -205,7 +205,7 @@ export function OntologyExplorer() {
    * the centre the crossing count is measured from adds half the layout size back.
    */
   const orrerySignature = rawNodes.map(n => {
-    const rn = (n.data as { node: RegulatoryNode }).node;
+    const rn = (n.data as unknown as { node: RegulatoryNode }).node;
     const rec = (rn.data ?? {}) as { confidence?: unknown; restricted?: unknown };
     return `${rn.id}|${rn.type}|${rn.label}|${Math.round(n.position.x)}|${Math.round(n.position.y)}`
       + `|${String(rec.confidence ?? '')}|${String(rec.restricted ?? '')}`;
@@ -218,7 +218,7 @@ export function OntologyExplorer() {
      arrays these read are rebuilt by `useGraph` on every render, so listing them defeats the memo entirely. */
   const orreryEntities = useMemo(
     () => rawNodes.map(n => {
-      const rn = (n.data as { node: RegulatoryNode }).node;
+      const rn = (n.data as unknown as { node: RegulatoryNode }).node;
       return { id: rn.id, label: rn.label, kind: rn.type, record: rn.data };
     }),
     [orrerySignature],
@@ -260,8 +260,8 @@ export function OntologyExplorer() {
               <div className="absolute top-8 left-0 right-0 z-20 bg-card border border-line rounded shadow-lg overflow-hidden text-micro divide-y divide-line">
                 {searchMatches.map(m => (
                   <button key={m.id} onClick={() => handleSearchSelect(m)} className="w-full px-2.5 py-1.5 text-left hover:bg-ice-soft dark:hover:bg-ice-soft/10 block font-mono">
-                    <span className="text-grey uppercase font-sans font-semibold mr-1">[{((m.data as any).node as RegulatoryNode).type}]</span>
-                    {((m.data as any).node as RegulatoryNode).label}
+                    <span className="text-grey uppercase font-sans font-semibold mr-1">[{(m.data as unknown as { node: RegulatoryNode }).node.type}]</span>
+                    {(m.data as unknown as { node: RegulatoryNode }).node.label}
                   </button>
                 ))}
               </div>
@@ -282,7 +282,7 @@ export function OntologyExplorer() {
             })}
           </div>
 
-          <select value={colorBy} onChange={e => setColorBy(e.target.value as any)}
+          <select value={colorBy} onChange={e => setColorBy(e.target.value as typeof colorBy)}
             className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 text-[9px] font-semibold focus-ring text-navy shrink-0">
             <option value="status">Status</option>
             <option value="phase">Phase</option>
@@ -332,7 +332,7 @@ export function OntologyExplorer() {
               onInit={setRfInstance}
               onMove={handleMove}
               onNodeClick={(_, node) => {
-                const rawNode = (node.data as any).node as RegulatoryNode;
+                const rawNode = (node.data as unknown as { node: RegulatoryNode }).node;
                 setSelectedNode(rawNode);
                 setSelectedNodeId(rawNode.id);
               }}
@@ -354,7 +354,7 @@ export function OntologyExplorer() {
           <div className="absolute bottom-3 right-3 w-60 bg-card/95 backdrop-blur border border-line rounded-lg shadow-md p-2 space-y-1">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
-                <Calendar size={11} className="text-cyan-500" />
+                <Calendar size={11} className="text-accent-icon" />
                 <span className="text-[9px] font-bold font-mono">{timelineStepLabels[timelineStep].title}</span>
               </div>
               <span className="font-mono text-[8px] bg-ice-soft dark:bg-navy-deep border border-line rounded px-1 font-bold">{timelineStep}/4</span>

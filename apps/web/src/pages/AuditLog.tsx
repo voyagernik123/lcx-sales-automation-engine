@@ -140,7 +140,7 @@ export function AuditLog() {
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card">
         <h1 className="text-lg font-bold flex items-center gap-1.5 text-navy">
-          <Shield size={17} className="text-cyan-500" />
+          <Shield size={17} className="text-accent-icon" />
           Audit Log
         </h1>
         <span className="text-micro text-grey font-mono num-tabular">{total} events</span>

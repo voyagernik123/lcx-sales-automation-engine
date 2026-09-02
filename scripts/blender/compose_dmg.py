@@ -21,6 +21,17 @@ import sys
 from PIL import Image
 
 
+def _wired(out: str) -> bool:
+    """True when tauri.conf.json's dmg.background names this file — read, never asserted."""
+    import json as _json
+    try:
+        conf = _json.load(open("apps/desktop/src-tauri/tauri.conf.json"))
+        bg = conf.get("bundle", {}).get("macOS", {}).get("dmg", {}).get("background") or conf.get("bundle", {}).get("dmg", {}).get("background", "")
+        return os.path.basename(str(bg)) == os.path.basename(out)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("forge")
@@ -40,15 +51,18 @@ def main() -> int:
     band_top = int((420 - 110) * scale)
     cx, cy = W // 2, band_top + (H - band_top) // 2
     plate.alpha_composite(forge, (cx - w // 2, cy - h // 2))
-    plate.convert("RGB").save(a.out, "PNG", optimize=True)
+    # pHYs at 144 dpi. Finder reads a PNG without a density as POINTS, so a 1320×840 plate would show a
+    # quarter of itself; with 144 dpi it is a 660×420 pt image at 2× — the same chunk make-dmg-plate.mjs
+    # writes, pinned by topNavChrome.test.tsx.
+    plate.convert("RGB").save(a.out, "PNG", optimize=True, dpi=(144, 144))
     side = {
         "base": os.path.relpath(a.plate), "object": os.path.relpath(a.forge), "placed": {"x": cx - w // 2, "y": cy - h // 2, "w": w, "h": h},
         "constraints": ["light ground (Finder labels are dark)", "mark from lcx-mark.svg, never redrawn", "positions from tauri.conf.json", "no wording"],
-        "wired": False, "decision": "the owner's one look (plan §9) — tauri.conf.json still points at the generated plate",
+        "wired": _wired(a.out), "decision": "wired by owner instruction 2026-09-02 (\"ship everything pending\"); one path in tauri.conf.json — the generated plate remains beside it to revert to",
         "bytes": os.path.getsize(a.out), "sha256_16": hashlib.sha256(open(a.out, "rb").read()).hexdigest()[:16],
     }
     json.dump(side, open(a.out + ".render.json", "w"), indent=2)
-    print(f"  {a.out} {W}x{H} {side['bytes']} B — object {w}x{h} at ({side['placed']['x']},{side['placed']['y']}); NOT wired")
+    print(f"  {a.out} {W}x{H} {side['bytes']} B — object {w}x{h} at ({side['placed']['x']},{side['placed']['y']}); {'wired' if _wired(a.out) else 'NOT wired'}")
     return 0
 
 

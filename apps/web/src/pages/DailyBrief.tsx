@@ -70,7 +70,7 @@ export function DailyBrief() {
             </Card>
 
             {/* Ripe targets */}
-            <Card title="Chase these now" icon={<Crosshair size={13} className="text-cyan-500" />} action={{ label: 'All targets →', onClick: () => navigate('/targets') }}>
+            <Card title="Chase these now" icon={<Crosshair size={13} className="text-accent-icon" />} action={{ label: 'All targets →', onClick: () => navigate('/targets') }}>
               {b.targets.length === 0 ? (
                 <Empty>No ranked targets yet.</Empty>
               ) : (

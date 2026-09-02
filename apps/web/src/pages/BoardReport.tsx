@@ -198,7 +198,7 @@ export function BoardReport() {
       {/* CONTROLS — hidden on print */}
       <PageTitle
         className="br-no-print mb-5"
-        icon={<FileText size={20} className="text-cyan-500" />}
+        icon={<FileText size={20} className="text-accent-icon" />}
         subtitle="Live document — every figure is re-queried on open; print or email it as-is"
         actions={
           <>
@@ -251,7 +251,7 @@ export function BoardReport() {
         <div className="px-6 pb-5 pt-6">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-xl font-black tracking-tight text-navy">
-              LCX<span className="text-cyan-500">.</span>
+              LCX<span className="text-accent-text">.</span>
             </span>
             <span className="text-micro font-semibold uppercase tracking-wider text-grey">Confidential — board use only</span>
           </div>

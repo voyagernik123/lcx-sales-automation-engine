@@ -165,7 +165,7 @@ export function ScenarioCard({ className }: { className?: string }) {
     >
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-bold tracking-tight text-navy">
-          <FlaskConical size={14} className="text-cyan-500" aria-hidden="true" />
+          <FlaskConical size={14} className="text-accent-icon" aria-hidden="true" />
           Scenario
         </h2>
         {active && (

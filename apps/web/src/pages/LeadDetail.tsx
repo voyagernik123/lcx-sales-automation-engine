@@ -1140,7 +1140,7 @@ function Section({ icon, title, children, id }: { icon: React.ReactNode; title: 
   return (
     <div id={id} className="rounded-lg border border-line bg-card overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line bg-ice-soft dark:bg-ice-soft/5 text-navy">
-        <span className="text-cyan-500">{icon}</span>
+        <span className="text-accent-icon">{icon}</span>
         <SectionLabel>{title}</SectionLabel>
       </div>
       <div className="px-4 py-3">{children}</div>

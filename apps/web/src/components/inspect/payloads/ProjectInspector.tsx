@@ -173,7 +173,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
       {/* Contacts → contact inspector */}
       <div id="insp-contacts">
         <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
-          <Users size={11} className="text-cyan-500" />
+          <Users size={11} className="text-accent-icon" />
           Contacts ({verifiedCount} verified / {lead.people.length})
         </div>
         {lead.people.length === 0 ? (

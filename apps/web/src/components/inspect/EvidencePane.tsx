@@ -80,6 +80,11 @@ export function EvidencePane() {
 
   const title = inspectorTitle(stack);
   const empty = stack.length === 0;
+  // The cursor has moved off the record this pane describes. Same type, different id: the
+  // verbs land on the highlighted row; the evidence is still the previous one. Space re-peeks.
+  const cursor = useInspectorStore((s) => s.cursor);
+  const top = stack[stack.length - 1];
+  const cursorMoved = !!top && !!cursor && cursor.type === top.type && cursor.id !== top.id;
 
   return (
     <aside
@@ -139,6 +144,14 @@ export function EvidencePane() {
         {surfaceHasKeys ? 'keys → the surface' : 'keys → this pane · ⇧⇥ back to the surface'}
       </p>
 
+      {cursorMoved && (
+        <p
+          data-evidence-stale=""
+          className="shrink-0 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 font-mono text-[10px] text-amber-700 dark:text-amber-300"
+        >
+          cursor moved · this evidence is still the previous row · space re-peeks
+        </p>
+      )}
       <div className="flex-1 space-y-4 overflow-y-auto px-3 py-3">
         {empty ? (
           <p className="text-label leading-relaxed text-grey">

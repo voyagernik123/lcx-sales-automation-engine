@@ -246,7 +246,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
       {/* Likelihood why-panel */}
       {health && (
         <div>
-          <SectionHead icon={<TrendingUp size={11} className="text-cyan-500" />}>Likelihood — the why</SectionHead>
+          <SectionHead icon={<TrendingUp size={11} className="text-accent-icon" />}>Likelihood — the why</SectionHead>
           <div className="flex items-center gap-2">
             <span
               className={clsx('num-tabular derived rounded px-1.5 py-0.5 font-mono text-label font-bold', LIKELIHOOD_BAND_CLS[health.likelihood.band])}
@@ -290,7 +290,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
       {/* Warnings + mitigations */}
       {health && (
         <div>
-          <SectionHead icon={<ShieldAlert size={11} className="text-cyan-500" />}>
+          <SectionHead icon={<ShieldAlert size={11} className="text-accent-icon" />}>
             Warnings ({health.warnings.length})
           </SectionHead>
           {health.warnings.length === 0 ? (
@@ -319,7 +319,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
       {/* Momentum + stage dwell */}
       {health && (
         <div>
-          <SectionHead icon={<Activity size={11} className="text-cyan-500" />}>Momentum &amp; stage dwell</SectionHead>
+          <SectionHead icon={<Activity size={11} className="text-accent-icon" />}>Momentum &amp; stage dwell</SectionHead>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-label">
             <span className={clsx('inline-flex items-center gap-1 font-mono font-bold', MOMENTUM_GLYPH[health.momentum].cls)}>
               {MOMENTUM_GLYPH[health.momentum].glyph} {health.momentum}
@@ -344,7 +344,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
       {/* Editable listing playbook */}
       {health && !closed && (
         <div>
-          <SectionHead icon={<ListChecks size={11} className="text-cyan-500" />}>
+          <SectionHead icon={<ListChecks size={11} className="text-accent-icon" />}>
             Listing playbook ·{' '}
             <Derived lineage={playbookLineage(health.playbook)}>
               {health.playbook.filter(s => s.status === 'done').length}/{health.playbook.length}
@@ -360,7 +360,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
 
       {/* Recent events */}
       <div id="insp-deal-events">
-        <SectionHead icon={<Activity size={11} className="text-cyan-500" />}>Recent events</SectionHead>
+        <SectionHead icon={<Activity size={11} className="text-accent-icon" />}>Recent events</SectionHead>
         {recentEvents.length === 0 ? (
           <p className="text-micro italic text-grey">No events recorded yet.</p>
         ) : (

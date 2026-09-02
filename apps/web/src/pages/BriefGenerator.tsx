@@ -442,9 +442,9 @@ export function BriefGenerator() {
             <div className="flex justify-between items-center">
               <SectionLabel>3. Target Jurisdictions</SectionLabel>
               <div className="flex gap-1.5">
-                <button onClick={handleSelectPhase1} className="text-[9px] font-bold text-cyan-500 hover:underline">Phase 1</button>
+                <button onClick={handleSelectPhase1} className="text-[9px] font-bold text-accent-text hover:underline">Phase 1</button>
                 <span className="text-grey text-[9px]">•</span>
-                <button onClick={handleSelectNmls} className="text-[9px] font-bold text-cyan-500 hover:underline">NMLS</button>
+                <button onClick={handleSelectNmls} className="text-[9px] font-bold text-accent-text hover:underline">NMLS</button>
                 <span className="text-grey text-[9px]">•</span>
                 <button onClick={handleClearStates} className="text-[9px] font-bold text-grey-dark hover:underline">Clear</button>
               </div>

@@ -64,7 +64,7 @@ export function UsIntelGauges({
   return (
     <div id={id} className="rounded-lg border border-line/70 bg-card shadow-card overflow-hidden">
       <div className={`flex items-center gap-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
-        <Radar size={12} className="text-cyan-500 shrink-0" />
+        <Radar size={12} className="text-accent-icon shrink-0" />
         <span className="text-micro font-bold uppercase tracking-wider text-navy">US Intel Signals</span>
         <span className="text-micro text-grey">market-entry readout</span>
       </div>

@@ -20,8 +20,10 @@ export function ListingReadinessPanel() {
   const [path, setPath] = useState<'A' | 'B'>('A');
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = useCallback(() => { fetchCommandDeep().then(setDeep).catch(() => setDeep(null)); }, []);
-  useEffect(load, [load]);
+  // `fresh` after a governed write: the read cache would otherwise serve the body from BEFORE
+  // the write, and the panel would show the flip as not having happened (see fetchCommandDeep).
+  const load = useCallback((fresh = false) => { fetchCommandDeep(fresh ? { cache: false } : undefined).then(setDeep).catch(() => setDeep(null)); }, []);
+  useEffect(() => { load(); }, [load]);
 
   if (!deep) return null;
   const blockers = deep.blockers as Array<{ num: number; blocker: string; category: string | null; severity: string | null; status?: string; owner: string | null }>;
@@ -36,13 +38,13 @@ export function ListingReadinessPanel() {
 
   const setReq = async (num: number, status: string) => {
     setBusy(`r${num}`);
-    try { await invokeCommandAction('command_set_requirement_status', 'command_requirement', String(num), { status }); load(); }
+    try { await invokeCommandAction('command_set_requirement_status', 'command_requirement', String(num), { status }); load(true); }
     catch (e) { toast('error', e instanceof Error ? e.message : 'Update failed'); }
     finally { setBusy(null); }
   };
   const setBlk = async (num: number, status: string) => {
     setBusy(`b${num}`);
-    try { await invokeCommandAction('command_set_blocker_status', 'command_blocker', String(num), { status }); load(); }
+    try { await invokeCommandAction('command_set_blocker_status', 'command_blocker', String(num), { status }); load(true); }
     catch (e) { toast('error', e instanceof Error ? e.message : 'Update failed'); }
     finally { setBusy(null); }
   };

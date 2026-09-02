@@ -13,8 +13,8 @@
     "positions from tauri.conf.json",
     "no wording"
   ],
-  "wired": false,
-  "decision": "the owner's one look (plan \u00a79) \u2014 tauri.conf.json still points at the generated plate",
-  "bytes": 35570,
-  "sha256_16": "f7a3998ba120eee6"
+  "wired": true,
+  "decision": "wired by owner instruction 2026-09-02 (\"ship everything pending\"); one path in tauri.conf.json \u2014 the generated plate remains beside it to revert to",
+  "bytes": 35591,
+  "sha256_16": "f1d83306feee9d6d"
 }

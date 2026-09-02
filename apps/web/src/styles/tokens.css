@@ -114,6 +114,13 @@
    * used 0.6 alpha and composited to 2.06:1 on this canvas, under the WCAG 3:1
    * non-text minimum. At full strength this hue measures 3.68:1 on white. */
   --focus: 8 145 178;         /* #0891b2 — cyan-600 */
+  /* THE ACCENT, split by what it colours (TERMINAL T1 #17 follow-up, 2026-09-02). `text-cyan-500`
+   * sat on 57 sites at 2.43:1 in light — below the 3:1 floor for a glyph and the 4.5:1 floor for
+   * text. Two tokens, because the two floors differ: icons may use cyan-600 (3.68:1 on the page,
+   * 3.56:1 on a card); text needs cyan-700 (4.87:1 / 4.67:1). Dark lifts both to cyan-400, which
+   * clears every floor by a wide margin. `accentTokens.test.ts` recomputes the four ratios. */
+  --accent-icon: 8 145 178;   /* #0891b2 — cyan-600 */
+  --accent-text: 14 116 144;  /* #0e7490 — cyan-700 */
 }
 
 /* Dark is a DESIGNED PARALLEL PALETTE (plan 4.2), not an inversion of light.
@@ -168,6 +175,8 @@
    * the raised inverse-surface (#202B48) where controls actually sit.
    * cyan-400 measures 7.74:1 there and 10.66:1 on the canvas. */
   --focus: 34 211 238;        /* #22d3ee — cyan-400 */
+  --accent-icon: 34 211 238;  /* #22d3ee — cyan-400 */
+  --accent-text: 34 211 238;  /* #22d3ee — cyan-400 */
   --indigo: 129 140 248;      /* #818cf8 */
 }
 

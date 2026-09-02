@@ -205,7 +205,7 @@ export function Forecast() {
           {/* Post-listing / expansion */}
           <div className="rounded-lg border border-line bg-card p-4 shadow-card">
             <div className="mb-2 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
-              <Rocket size={12} className="text-cyan-500" /> Post-listing &amp; expansion
+              <Rocket size={12} className="text-accent-icon" /> Post-listing &amp; expansion
             </div>
             {wonDeals.length === 0 ? (
               <p className="text-micro text-grey">No listed deals yet — expansion plays unlock after the first win.</p>

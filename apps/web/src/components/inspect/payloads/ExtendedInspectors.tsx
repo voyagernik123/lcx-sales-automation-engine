@@ -188,7 +188,7 @@ export function ListingInspector({ id }: InspectorPayloadProps) {
       </div>
       <div>
         <div className={SECTION}>
-          <CalendarClock size={11} className="text-cyan-500" />
+          <CalendarClock size={11} className="text-accent-icon" />
           30/60/90 post-listing triggers
         </div>
         {triggers === null ? (
@@ -282,7 +282,7 @@ export function DecisionInspector({ id, seed }: InspectorPayloadProps) {
       {s.reason && (
         <div>
           <div className={SECTION}>
-            <Activity size={11} className="text-cyan-500" />
+            <Activity size={11} className="text-accent-icon" />
             Rationale
           </div>
           <p className="rounded-md border border-line bg-ice-soft/40 p-2.5 text-label text-navy dark:bg-ice-soft/5">{s.reason}</p>

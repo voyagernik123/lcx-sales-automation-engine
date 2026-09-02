@@ -136,7 +136,7 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
             onClick={() => push('contact', `${handoff.projectId}:${handoff.personId}`)}
             className="flex w-full items-center gap-2 rounded border border-line px-2 py-1.5 text-left text-micro hover:border-cyan-400 hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
           >
-            <User size={11} className="shrink-0 text-cyan-500" />
+            <User size={11} className="shrink-0 text-accent-icon" />
             <span className="font-semibold text-navy truncate">{handoff.personName}</span>
             {handoff.personEmail && <span className="text-grey truncate">{handoff.personEmail}</span>}
           </button>
@@ -160,7 +160,7 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
       {/* Event timeline */}
       <div id="insp-handoff-timeline">
         <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
-          <Inbox size={11} className="text-cyan-500" />
+          <Inbox size={11} className="text-accent-icon" />
           Timeline ({events.length})
         </div>
         {events.length === 0 ? (

@@ -206,7 +206,7 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastWithCover
     series.push({
       label: 'Scenario',
       counts: binTotals(scnSim.totals, domain, BINS),
-      className: 'text-cyan-500 dark:text-cyan-400',
+      className: 'text-accent-text',
     });
   }
 

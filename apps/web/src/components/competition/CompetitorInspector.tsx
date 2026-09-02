@@ -286,7 +286,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
               <span className="text-[9px] font-bold uppercase text-grey block">Additional Licenses</span>
               {competitor.licenses.otherLicenses.map((l, i) => (
                 <div key={i} className="flex items-start gap-1.5 text-micro text-grey-dark">
-                  <span className="text-cyan-500 shrink-0 mt-0.5">+</span>
+                  <span className="text-accent-text shrink-0 mt-0.5">+</span>
                   <span>{l}</span>
                 </div>
               ))}
@@ -440,7 +440,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
         {/* SECTION 7: LCX Strategic Implications */}
         <div className="space-y-2 pt-1 border-t border-line">
           <h4 className="text-[9px] font-bold uppercase tracking-wider text-grey flex items-center gap-1.5">
-            <Swords size={11} className="text-cyan-500" />
+            <Swords size={11} className="text-accent-icon" />
             LCX Strategic Assessment
           </h4>
 

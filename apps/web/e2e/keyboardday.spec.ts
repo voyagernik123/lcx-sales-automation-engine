@@ -1137,8 +1137,21 @@ test('⌘K reachability, as this stubbed harness measures it', async ({ page }) 
   // the old INSPECTOR_TO_OBJECT path and the fix was invisible to the very test built to
   // detect it. A test that stubs the thing it measures has to be re-derived from the
   // thing, or it measures its own fixture — the defect this file's own header warns about.
-  const pairs = [...searchSrc.matchAll(/subjectType:\s*'([a-z_]+)',\s*inspector:\s*'([a-z_]+)'/g)]
-    .map((m) => ({ subjectType: m[1]!, inspector: m[2]! }));
+  // ── WHY THE STUB REACHED 7 WHERE A BROWSER REACHED 20 — ANSWERED 2026-09-02 ──────────
+  // The old regex demanded `subjectType: 'x', inspector: 'y'` ON ONE LINE. Five groups are
+  // written that way (projects, contacts, deals, documents, signals). The other eleven —
+  // command_task/decision/partner/requirement/blocker, dist_listing/campaign, access_request,
+  // member, marketing_asset — declare `subjectType` on its own line, some with no `inspector` at
+  // all. So this harness never emitted eleven of sixteen nouns and measured its own parser. Read
+  // per GROUP BLOCK instead: from each `key: '…'` to the next, take `subjectType` (required) and
+  // `inspector` (optional, mirrored the way the route mirrors it — absent means absent).
+  const blocks = searchSrc.split(/\n\s*\{\s*\n\s*key:\s*'/).slice(1);
+  const pairs = blocks.flatMap((b) => {
+    const st = /subjectType:\s*'([a-z_]+)'/.exec(b);
+    if (!st) return [];
+    const ins = /inspector:\s*'([a-z_]+)'/.exec(b);
+    return [{ subjectType: st[1]!, inspector: ins ? ins[1]! : st[1]! }];
+  });
   expect(pairs.length, 'GET /v1/search no longer declares `subjectType` beside `inspector` per group — this measurement is reading a shape that no longer exists, which is how it silently stopped measuring once before').toBeGreaterThan(0);
   const inspectors = pairs.map((x) => x.inspector);
   record('object types GET /v1/search can emit', inspectors.join(', '));
@@ -1236,15 +1249,21 @@ test('⌘K reachability, as this stubbed harness measures it', async ({ page }) 
   // The three new API paths (`/v1/marketing/holdings*`) and the four new GPS ones
   // (`/v1/gps/inputs*`) are ROUTES, not actions; nothing in the palette aims at them.
   //
-  // The open question, for whoever picks this up: why does a stub that mirrors the route's
-  // shape resolve fewer nouns than the route? Likely candidates, in order — the API client
-  // dropping an unmodelled field while parsing, `SearchGroup` not carrying `subjectType`
-  // through to `nounFromSearchResult`, or this spec's one-group-per-query stub failing to
-  // exercise a path the real 14-way fan-out does.
+  // ── ANSWERED 2026-09-02: none of the three candidates. THE HARNESS'S OWN PARSER ──────
+  // The regex that read (subjectType, inspector) pairs out of search.ts matched only groups
+  // written on one line — five of sixteen. Eleven nouns were never emitted, so the stub
+  // measured its parser, exactly the defect this file's header warns about. Parsing per group
+  // block (above) the harness reaches **24 of 30**, and the six it cannot reach are explained
+  // by construction rather than open: the five `gps_*` verbs aim at nouns the GPS desk
+  // addresses through its own key-address grammar (`gpsGrammar.ts`), which `/v1/search` never
+  // emits; and `dist_campaign_create` creates the campaign it would otherwise aim at, so no
+  // existing noun offers it. The browser's 20 (measured before the registry grew to 30) and
+  // this 24 are now the same kind of number. So `missing` moved 23 → 6, and it moved because
+  // the instrument was fixed, not the app.
   expect(
     missing.length,
-    `this stubbed harness reaches ${manifest.actions.length - missing.length} of ${manifest.actions.length}; a browser against the real route reaches 20. If you changed reachability, update this number and say which way it moved. Unreachable here: ${missing.join(', ')}`,
-  ).toBe(23);
+    `this stubbed harness reaches ${manifest.actions.length - missing.length} of ${manifest.actions.length}. If you changed reachability, update this number and say which way it moved. Unreachable here: ${missing.join(', ')}`,
+  ).toBe(6);
 });
 
 /* ═══════════════════ the guard, proven able to fail ══════════════════════ */

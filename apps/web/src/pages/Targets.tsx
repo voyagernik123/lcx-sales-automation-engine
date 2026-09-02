@@ -185,7 +185,7 @@ export function Targets() {
                         type="button"
                         onClick={() => setDraftFor(t.id)}
                         title="Draft outreach"
-                        className="rounded p-1 text-grey transition-colors hover:bg-ice-soft hover:text-cyan-500 dark:hover:bg-ice-soft/10"
+                        className="rounded p-1 text-grey transition-colors hover:bg-ice-soft hover:text-accent-icon dark:hover:bg-ice-soft/10"
                       >
                         <Sparkles size={13} />
                       </button>

@@ -166,7 +166,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
 
   const SortIcon = ({ field }: { field: ProductSortField }) => {
     if (sortField !== field) return <ArrowUpDown size={10} className="inline opacity-25" />;
-    return sortDir === 'asc' ? <ChevronUp size={12} className="inline text-cyan-500" /> : <ChevronDown size={12} className="inline text-cyan-500" />;
+    return sortDir === 'asc' ? <ChevronUp size={12} className="inline text-accent-icon" /> : <ChevronDown size={12} className="inline text-accent-icon" />;
   };
 
   const categories = Object.keys(CATEGORY_META) as ProductCategory[];
@@ -319,14 +319,14 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)}
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as typeof categoryFilter)}
           className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Categories</option>
           {categories.map(c => (
             <option key={c} value={c}>{CATEGORY_META[c].label}</option>
           ))}
         </select>
-        <select value={audienceFilter} onChange={e => setAudienceFilter(e.target.value as any)}
+        <select value={audienceFilter} onChange={e => setAudienceFilter(e.target.value as typeof audienceFilter)}
           className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Audiences</option>
           <option value="retail">Retail</option>
@@ -341,7 +341,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
           <option value="3">Tier 3 — Medium</option>
           <option value="4">Tier 4 — Monitor</option>
         </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
           className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Statuses</option>
           <option value="live">Live</option>

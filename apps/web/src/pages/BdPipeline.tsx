@@ -1,3 +1,5 @@
+import { useInspectorStore } from '@/stores/useInspectorStore';
+const setInspectorCursor = (c: { type: 'project'; id: string } | null) => useInspectorStore.getState().setCursor(c);
 import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import { Fig } from '@/components/fig/Fig';
 import { chordFor } from '@/components/fig/figAddress';
@@ -341,6 +343,8 @@ export function BdPipeline() {
         ? (dir === 1 ? 0 : visibleRows.length - 1)
         : Math.min(visibleRows.length - 1, Math.max(0, idx + dir));
       setSelectedId(visibleRows[next].id);
+      // The docked evidence pane reads this to say when it has stopped describing the cursor row.
+      setInspectorCursor({ type: 'project', id: visibleRows[next].id });
     },
     [visibleRows, selectedId],
   );
@@ -426,8 +430,11 @@ export function BdPipeline() {
 
   const handlePeek = useCallback((id: string) => {
     setSelectedId(id);
+    setInspectorCursor({ type: 'project', id });
     inspect('project', id);
   }, [inspect]);
+  // Leaving the queue clears the cursor, so another surface's docked pane never reads a BD row as its cursor.
+  useEffect(() => () => setInspectorCursor(null), []);
 
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setFilter('search', e.target.value);
@@ -691,7 +698,7 @@ export function BdPipeline() {
        */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card overflow-x-auto">
         <h1 className="text-lg font-bold shrink-0 flex items-center gap-1.5">
-          <Target size={17} className="text-cyan-500" />
+          <Target size={17} className="text-accent-icon" />
           BD Engine
         </h1>
 

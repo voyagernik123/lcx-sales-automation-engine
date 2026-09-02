@@ -279,7 +279,7 @@ export function MarketMap() {
                 quadrant counts cover it on narrow screens) ── */}
           <aside className="hidden w-64 shrink-0 flex-col rounded-lg border border-line/80 bg-card p-3 shadow-card xl:flex">
             <div className="mb-2 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
-              <Crosshair size={11} className="text-cyan-500" />
+              <Crosshair size={11} className="text-accent-icon" />
               {selected.size > 0 ? 'Selected' : lens.zones[lens.target]}
             </div>
             {ranked.length === 0 ? (

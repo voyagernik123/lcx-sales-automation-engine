@@ -45,7 +45,7 @@
     "verify-live": "node scripts/verify-live.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22 <23"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

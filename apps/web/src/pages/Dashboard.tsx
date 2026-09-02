@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Terminal, ShieldAlert, LayoutDashboard } from 'lucide-react';
 import { Card, CardHeader, CardBody, Badge, ReadinessMeter, InspectorDrawer, PageTitle } from '@/components/ui';
 import { StateInspectorPanel } from '@/components/shared';
-import { states, products, requirements, readinessItems, redFlags } from '@/data';
+import { states, products, requirements, readinessItems, redFlags, DATA_REVISED_AT } from '@/data';
 import { useAuditStore, useFilterStore } from '@/stores';
 import { toBadgeStatus } from '@/lib/formatting';
 import { getEffectiveStateStatus, getEffectiveRequirementStatus } from '@/lib/compliance';
@@ -132,12 +132,12 @@ export function Dashboard() {
               every one of these reads "undated" — a true statement about the dataset, kept visible rather than
               papered over with today's date. */}
           <FigGrid cols={6} className="shrink-0">
-            <Fig id="regulatory.researched" address={chordFor('regulatory')} label="researched jurisdictions" value={researched.length} kind="int" source={{ at: null, kind: 'record' }} />
-            <Fig id="regulatory.jurisdictions" address={chordFor('regulatory')} label="jurisdictions in scope" value={states.length} kind="int" source={{ at: null, kind: 'record' }} />
-            <Fig id="regulatory.launchable" address={chordFor('regulatory')} label="launchable states" value={readyOrConditional.length} kind="int" source={{ at: null, kind: 'derived' }} />
-            <Fig id="regulatory.blockers" address={chordFor('regulatory')} label="blocked requirements" value={blockers.length} kind="int" source={{ at: null, kind: 'derived' }} goodIsUp={false} />
-            <Fig id="regulatory.products" address={chordFor('regulatory')} label="listed products" value={products.length} kind="int" source={{ at: null, kind: 'record' }} />
-            <Fig id="regulatory.coverage" address={chordFor('regulatory')} label="research coverage" value={states.length > 0 ? (researched.length / states.length) * 100 : null} kind="pct" source={{ at: null, kind: 'derived' }} />
+            <Fig id="regulatory.researched" address={chordFor('regulatory')} label="researched jurisdictions" value={researched.length} kind="int" source={{ at: DATA_REVISED_AT, kind: 'record' }} />
+            <Fig id="regulatory.jurisdictions" address={chordFor('regulatory')} label="jurisdictions in scope" value={states.length} kind="int" source={{ at: DATA_REVISED_AT, kind: 'record' }} />
+            <Fig id="regulatory.launchable" address={chordFor('regulatory')} label="launchable states" value={readyOrConditional.length} kind="int" source={{ at: DATA_REVISED_AT, kind: 'derived' }} />
+            <Fig id="regulatory.blockers" address={chordFor('regulatory')} label="blocked requirements" value={blockers.length} kind="int" source={{ at: DATA_REVISED_AT, kind: 'derived' }} goodIsUp={false} />
+            <Fig id="regulatory.products" address={chordFor('regulatory')} label="listed products" value={products.length} kind="int" source={{ at: DATA_REVISED_AT, kind: 'record' }} />
+            <Fig id="regulatory.coverage" address={chordFor('regulatory')} label="research coverage" value={states.length > 0 ? (researched.length / states.length) * 100 : null} kind="pct" source={{ at: DATA_REVISED_AT, kind: 'derived' }} />
           </FigGrid>
 
           <Card className="shrink-0">

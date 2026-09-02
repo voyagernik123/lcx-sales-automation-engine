@@ -170,7 +170,7 @@ export function KpiDashboard() {
       <div className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-2.5 border-b border-line bg-card">
         <div className="min-w-0">
           <h1 className="text-lg font-bold flex items-center gap-1.5">
-            <BarChart3 size={17} className="text-cyan-500" />
+            <BarChart3 size={17} className="text-accent-icon" />
             KPI Dashboard
           </h1>
           <p className="mt-0.5 flex items-center gap-1.5 text-micro text-grey">

@@ -292,7 +292,7 @@ export const DRILLS: readonly PracticeDrill[] = [
       gateInputs: {},
     },
     teaches:
-      'Setting the status to returned upgrades the partner’s provenance to B2, and signed to A1 — the write is the evidence grade. The commercial VALUES cannot be filled from the keyboard path at all; the field below says why.',
+      'Setting the status to returned upgrades the partner’s provenance to B2, and signed to A1 — the write is the evidence grade. The commercial VALUES are a second verb on the same partner — Set partner contact/terms — typed inline in the verb panel; this step records the RFI’s status only (partnerTermsFromKeyboard.test.ts pins the whole keyboard path).',
     meets: null,
   },
   {

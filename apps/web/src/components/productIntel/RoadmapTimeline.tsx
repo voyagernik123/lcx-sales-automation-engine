@@ -75,7 +75,7 @@ export function RoadmapTimeline() {
         {/* Today marker */}
         <div className="relative">
           <div className="absolute left-[20px] top-0 bottom-0 w-px bg-cyan-500 z-10" style={{ left: `${timelinePos(1.5 * 3)}%` }}>
-            <span className="absolute -top-3 -translate-x-1/2 text-[8px] font-bold text-cyan-500 font-mono">TODAY</span>
+            <span className="absolute -top-3 -translate-x-1/2 text-[8px] font-bold text-accent-text font-mono">TODAY</span>
           </div>
 
           {renderSwimLane('Tier 1 · Critical', tierProducts.t1, '#f59e0b')}

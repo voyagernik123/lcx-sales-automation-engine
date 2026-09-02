@@ -203,7 +203,7 @@ export function ProductMatrix() {
                             </div>
                             <span className="font-mono font-bold text-micro w-12 shrink-0 flex items-center gap-0.5">
                               {effectiveHowey}%
-                              {commodityExempt && <span className="text-[7px] text-cyan-500 font-extrabold" title="Safe Harbor Applied">*</span>}
+                              {commodityExempt && <span className="text-[7px] text-accent-text font-extrabold" title="Safe Harbor Applied">*</span>}
                             </span>
                           </div>
                         );

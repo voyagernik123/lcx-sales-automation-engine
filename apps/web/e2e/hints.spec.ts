@@ -411,14 +411,27 @@ test.describe('the things that are not buttons', () => {
       row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       // Queued during the dispatch itself — non-zero only if React committed inline.
       const sync = observer.takeRecords().length;
-      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      // NOT one frame. Since S3 (INSTRUMENT, 6a2c04b) a row click NAVIGATES inside
+      // `document.startViewTransition`, and the browser runs the update callback only after
+      // it has captured the old state — one to three frames later in headless Chromium. The
+      // property this test guards is unchanged (the commit is deferred, never inline); the
+      // window in which the deferred commit must ARRIVE is now bounded by the transition,
+      // so wait for the first delivered mutation up to a second and report how long it took.
+      // This spec was red in CI for four commits with the one-frame window while the root
+      // gate (which does not run e2e) stayed green — the reason CI is the backstop.
+      const started = performance.now();
+      let frames = 0;
+      while (delivered + observer.takeRecords().length === 0 && performance.now() - started < 1000) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        frames += 1;
+      }
       const deferred = delivered + observer.takeRecords().length;
       observer.disconnect();
-      return { sync, deferred };
+      return { sync, deferred, frames };
     });
 
     expect(sync, 'React committed synchronously after all — the deferral could be removed').toBe(0);
-    expect(deferred, 'the click produced no mutation even a frame later').toBeGreaterThan(0);
+    expect(deferred, 'the click produced no mutation within a second — the navigation never committed').toBeGreaterThan(0);
   });
 
   test('a tag on a row does NOT fire twice, which is what the deferral buys', async ({ page }) => {

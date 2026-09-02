@@ -34,7 +34,7 @@ export interface CommandRisk { id: string; category: string | null; title: strin
 export interface CommandFinancial { id: string; area: string | null; item: string; value: string | null; unit: string | null; assumption: boolean; source: string | null }
 export interface CommandProduct { id: string; name: string; type: string | null; status: string | null; owner: string | null; notes: string | null }
 
-const get = async <T>(path: string): Promise<T> => (await request<{ data: T }>(`/v1/command${path}`, { auth: true })).data;
+const get = async <T>(path: string, opts?: { cache?: false }): Promise<T> => (await request<{ data: T }>(`/v1/command${path}`, { auth: true, ...(opts?.cache === false ? { cache: false as const } : {}) })).data;
 
 export const fetchCommandOverview = () => get<CommandOverview>('/overview');
 export const fetchCommandPartners = () => get<CommandPartner[]>('/partners');
@@ -178,7 +178,13 @@ export interface CommandDeep {
   live: { requirements: boolean; blockers: boolean };
 }
 
-export const fetchCommandDeep = () => get<CommandDeep>('/deep');
+/**
+ * `{ cache: false }` after a governed write. The read cache marks a body stale rather than
+ * deleting it, so a reload right after `command_set_blocker_status` was served the PRE-WRITE
+ * body and the panel re-rendered the blocker still open — the operator's likely next move
+ * was to flip it again (found in the TERMINAL verify pass, 2026-07-25; fixed 2026-09-02).
+ */
+export const fetchCommandDeep = (opts?: { cache?: false }) => get<CommandDeep>('/deep', opts);
 
 /* ── 100X Phase 2/3: the decision engines ── */
 

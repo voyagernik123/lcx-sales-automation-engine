@@ -57,11 +57,11 @@ interface BulkSelectActionsProps {
 export function BulkSelectActions({ onSelectPhase1, onSelectNmls, onClear }: BulkSelectActionsProps) {
   return (
     <div className="flex gap-1.5">
-      <button onClick={onSelectPhase1} className="text-[9px] font-bold text-cyan-500 hover:underline">
+      <button onClick={onSelectPhase1} className="text-[9px] font-bold text-accent-text hover:underline">
         Phase 1
       </button>
       <span className="text-grey text-[9px]">&bull;</span>
-      <button onClick={onSelectNmls} className="text-[9px] font-bold text-cyan-500 hover:underline">
+      <button onClick={onSelectNmls} className="text-[9px] font-bold text-accent-text hover:underline">
         NMLS
       </button>
       <span className="text-grey text-[9px]">&bull;</span>

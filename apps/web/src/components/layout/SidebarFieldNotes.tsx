@@ -39,7 +39,7 @@ export function SidebarFieldNotes() {
       </div>
       <p
         key={index}
-        className="min-h-[2.6rem] text-label text-navy leading-relaxed animate-fadeIn"
+        className="min-h-[2.6rem] text-label text-navy leading-relaxed"
       >
         {NOTES[index]}
       </p>

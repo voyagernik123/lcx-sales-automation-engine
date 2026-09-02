@@ -508,7 +508,7 @@ export function Handoffs() {
       {/* Left: inbox list */}
       <div className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-[340px] shrink-0 flex-col border-r border-line bg-card`}>
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-line">
-          <MessageSquare size={15} className="text-cyan-500 shrink-0" />
+          <MessageSquare size={15} className="text-accent-icon shrink-0" />
           <h1 className="text-sm font-bold">Handoff Inbox</h1>
           <span className="text-micro text-grey font-mono num-tabular">{total}</span>
           <div className="flex-1" />

@@ -1,8 +1,8 @@
-import { useMemo, useRef, useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore, useEffect, useRef } from 'react';
 import { BookOpen, X } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useDismissible } from '@/hooks/useDismissible';
 import { isTerminal } from '@/lib/container';
+import { useDismissible } from '@/hooks/useDismissible';
 import { MANUAL_LABEL, manualFor, type ManualEntry, type ManualSection } from '@/lib/manual';
 import { dismissStack, subscribeDismiss } from '@/lib/dismiss';
 import { useInspectorStore } from '@/stores';
@@ -31,11 +31,13 @@ import type { Noun, Principal } from '@/components/command/grammar';
  * slower for the operators who never press `?` (most of them, most days) would be
  * paying for the wrong thing.
  */
-export function Manual({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // The manual was the surface the audit MEASURED escaping — one Shift+Tab from it
+export function Manual({ open, onClose, onMounted }: { open: boolean; onClose: () => void; onMounted?: () => void }) {
+    // The manual was the surface the audit MEASURED escaping — one Shift+Tab from it
   // reached buttons on the page behind. The ref confines Tab to it.
+  const panelRef = useRef<HTMLDivElement>(null);
   useDismissible(open, onClose, MANUAL_LABEL, panelRef);
+  // Tell the host the body is here: it held the Escape entry through the lazy-load window and hands it over now.
+  useEffect(() => { onMounted?.(); }, [onMounted]);
 
   const operator = useOperatorStore((s) => s.operator);
   const me = useAccessStore((s) => s.me);

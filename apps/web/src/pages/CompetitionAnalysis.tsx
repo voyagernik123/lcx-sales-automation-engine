@@ -68,7 +68,7 @@ export function CompetitionAnalysis() {
                 : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'
             )}
           >
-            {clarityEnacted ? <ToggleRight size={18} className="text-cyan-500" /> : <ToggleLeft size={18} />}
+            {clarityEnacted ? <ToggleRight size={18} className="text-accent-icon" /> : <ToggleLeft size={18} />}
             <span>
               {clarityEnacted
                 ? 'H.R. 3633 CLARITY Act — ENACTED (federal MTL preemption active)'
@@ -79,7 +79,7 @@ export function CompetitionAnalysis() {
           {clarityEnacted && (
             <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 dark:bg-cyan-500/3 px-4 py-3 shadow-sm shadow-cyan-500/5">
               <div className="flex items-center gap-2 mb-2">
-                <Sparkles size={14} className="text-cyan-500" />
+                <Sparkles size={14} className="text-accent-icon" />
                 <span className="text-micro font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400">
                   CLARITY Act Delta Summary
                 </span>

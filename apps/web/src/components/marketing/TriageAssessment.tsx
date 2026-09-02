@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode, useRef, useEffect } from 'react';
 import { Button, SectionLabel } from '@/components/ui';
 import type { MarketingReply } from '@/lib/api/marketing';
 import { Absent, Refused } from './DeskAtoms';
@@ -119,6 +119,10 @@ export function TriageAssessment({ reply, onRecorded }: {
   if (!action) missing.push('a response action');
   if (chosen?.needsRationale && rationale.trim() === '') missing.push('a rationale for this action');
 
+  // Same guard as FactoryPanel: a record that resolves after unmount must not write state.
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+
   const submit = async () => {
     if (!verifiability || !reach || !priority || !action) return;
     setBusy(true);
@@ -137,6 +141,7 @@ export function TriageAssessment({ reply, onRecorded }: {
         action,
         rationale: rationale.trim(),
       });
+      if (!alive.current) return;
       if (wrote === null) {
         setRouteAbsent(true);
         return;
@@ -144,6 +149,7 @@ export function TriageAssessment({ reply, onRecorded }: {
       setDone('Recorded. The decision, its confidence, its basis and who took it are on the row now.');
       onRecorded();
     } catch (e) {
+      if (!alive.current) return;
       setRefusal({
         code: 'DATA_ABSENT_NOT_ZERO',
         sentence: e instanceof Error && e.message ? e.message : 'The API refused to record this decision.',
@@ -160,7 +166,7 @@ export function TriageAssessment({ reply, onRecorded }: {
         ruleSetVersion: 1,
       });
     } finally {
-      setBusy(false);
+      if (alive.current) setBusy(false);
     }
   };
 

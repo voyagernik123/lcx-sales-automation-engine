@@ -267,7 +267,7 @@ export function Roadmap() {
 
         {/* Floating operational information box */}
         <div className="mt-8 border-t border-line/45 pt-4 text-xs text-grey leading-normal space-y-1 select-none shrink-0">
-          <p className="font-bold flex items-center gap-1"><Network size={11} className="text-cyan-500" /> Operational Chronos Protocol:</p>
+          <p className="font-bold flex items-center gap-1"><Network size={11} className="text-accent-icon" /> Operational Chronos Protocol:</p>
           <p>Hovering over any Gantt block draws live dependency vectors illustrating upstream compliance filings and downstream gating locks.</p>
         </div>
 

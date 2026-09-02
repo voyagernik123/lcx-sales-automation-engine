@@ -95,7 +95,7 @@ export function Settings() {
         <div className="flex-1 bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-micro overflow-hidden h-full flex flex-col">
           <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
             <div className="flex items-center gap-2">
-              <Terminal size={12} className="text-cyan-500" />
+              <Terminal size={12} className="text-accent-icon" />
               <span className="uppercase text-[9px] font-bold text-cyan-400">Compliance Audit Trail Logger</span>
             </div>
 

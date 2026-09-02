@@ -929,7 +929,10 @@ async function readReuse(
     [from, item.excludeId ?? -1],
   );
   const rows = res.rows;
-  const newestDelivery = rows.length === 0 ? null : new Date(String(rows[0].received_at)).toISOString();
+  // A corpus row without a parseable delivery instant contributes no poll bound: null, stated
+  // by the frame, rather than a RangeError that took the whole assessment down as "not read".
+  const newestMs = rows.length === 0 ? NaN : Date.parse(String(rows[0].received_at));
+  const newestDelivery = Number.isFinite(newestMs) ? new Date(newestMs).toISOString() : null;
   const frame = notificationFrame(
     { from, to: now, asOf: now, lastSuccessfulPollAt: newestDelivery },
     [

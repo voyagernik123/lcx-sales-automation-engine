@@ -581,7 +581,7 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
               : { state: 'State', product: 'Asset', flag: 'Risk', page: 'Page', object: 'Object' }[item.type];
             const typeColor = {
               state: 'text-indigo-500',
-              product: 'text-cyan-500',
+              product: 'text-accent-text',
               flag: 'text-red-500',
               page: 'text-grey',
               object: 'text-emerald-600',

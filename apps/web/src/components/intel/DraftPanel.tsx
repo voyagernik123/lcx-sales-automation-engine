@@ -58,7 +58,7 @@ export function DraftPanel({ subjectId, onClose }: { subjectId: string; onClose:
 
   return (
     <div
-      className="animate-fadeIn fixed inset-0 z-50 flex items-center justify-center bg-navy/40 p-6 backdrop-blur-sm dark:bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-navy/40 p-6 backdrop-blur-sm dark:bg-black/60"
       onMouseDown={onClose}
     >
       <div

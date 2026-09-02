@@ -428,6 +428,16 @@ type RequestOpts = {
   cache?: false;
 };
 
+/** The governed-write path: every action invocation the platform performs goes through it. */
+const INVOKE_PATH = /\/v1\/actions\/[^/]+\/invoke$/;
+
+/** A fresh key per invocation. `crypto.randomUUID` everywhere we ship; a time+random fallback for older jsdom. */
+export function mintIdempotencyKey(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return `ik-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 /** The one network call, with no cache involvement. */
 async function networkRequest<T>(path: string, opts: RequestOpts, method: string): Promise<T> {
   const headers: Record<string, string> = {
@@ -445,6 +455,18 @@ async function networkRequest<T>(path: string, opts: RequestOpts, method: string
   }
 
   if (opts.headers) Object.assign(headers, opts.headers);
+  /*
+   * REPLAY PROTECTION, FINALLY WIRED FROM THE CLIENT (TERMINAL T1 #2, the other half).
+   * The API has read `Idempotency-Key` on POST /v1/actions/:id/invoke since 5a43f46 and
+   * migration 0045 reserves/completes/releases on it — and no web call site ever sent one,
+   * so a proxy retry or a double-submitted governed write still applied twice and audited
+   * twice. One key per INVOCATION, minted here at the single seam every invoke passes
+   * through, so no call site can forget it. A caller that supplies its own key (a retry
+   * of the same logical request) wins.
+   */
+  if (method === 'POST' && INVOKE_PATH.test(path) && !headers['Idempotency-Key']) {
+    headers['Idempotency-Key'] = mintIdempotencyKey();
+  }
 
   const res = await fetch(url(path), {
     method,

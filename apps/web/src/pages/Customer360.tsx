@@ -197,7 +197,7 @@ function SectionCard({
   return (
     <section id={anchorId(id)} className="scroll-mt-14 rounded-xl border border-line bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
-        <span className="text-cyan-500">{icon}</span>
+        <span className="text-accent-icon">{icon}</span>
         <h2 className="text-label font-bold uppercase tracking-wider text-navy">{title}</h2>
         {badge != null && <span className="text-xs text-grey">{badge}</span>}
         {headerLink && (
