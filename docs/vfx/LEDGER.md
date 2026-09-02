@@ -568,3 +568,14 @@ verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the 
 - 2026-09-03 · **verify-live 8cdf9aa: TIMEOUT pages=0 render=1.** Render serves 8cdf9aa; Pages still serves the pre-P4 shell
   after twenty probes (~30 min) and ~55 min since the push, its check-run `in_progress` throughout. Half-live is recorded as
   half-live: the API is P4, the web is not yet. The fix commit will queue a second Pages build behind it.
+- 2026-09-03 · **fix(deck) + v0.4.0 bumps COMMITTED 3c29de8, pushed.** Desktop rebuild from this commit next, then release.
+- 2026-09-03 · **Desktop v0.4.0 — two guards fired, both rightly.** (1) `release:dry` refused: "the built app points at
+  localhost:8791". Mechanism: the desktop gate pins `VITE_API_URL` to the production origin when IT builds apps/web/dist, but a
+  root `npm run ci-check` I ran afterwards (the fix commit's gate) rebuilt the same gitignored dist with the developer
+  `.env.local` — and Tauri bundles whatever dist is on disk. Rule for this repo: nothing rebuilds apps/web/dist between the
+  desktop gate and the publish. (2) The rebuild from 3c29de8 failed its inner gate at the web vitest stage while my root gate
+  ran concurrently on the same tree and dist — one gate at a time. Rebuilding solo now; publish follows the dry run.
+- 2026-09-03 · The concurrent gate's web red was `marketingHoldings.test.tsx › shows the NOT DECLARED warning even with nothing
+  to show` (`holdings-register-empty` not found) — a marketing page P4 never touched, green in the root gate that ran beside
+  it. Recorded as the worker-contention class (memory: vitest file count shifts workers), not fixed by hand; the solo build's
+  gate is the arbiter.
