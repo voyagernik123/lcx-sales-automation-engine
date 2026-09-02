@@ -55,7 +55,7 @@ import { LaunchServices } from '@/pages/LaunchServices';
  * `apps/desktop/src-tauri/tauri.conf.json`, so a release that forgets this line
  * turns the suite red instead of leaving a stale number on the front page.
  */
-export const LCXOS_VERSION = '0.3.0';
+export const LCXOS_VERSION = '0.4.0';
 /**
  * The download's size in MB, one decimal place.
  *
@@ -66,6 +66,9 @@ export const LCXOS_VERSION = '0.3.0';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  *
+ * 0.4.0: 4_370_551 bytes = 4.4 MB — THE PRODUCTION P0–P4: the stage's scene module, the one present path (pipeline +
+ *        FXAA), the two studio environment maps and their sidecars, the hero fixtures' code paths. Measured from the
+ *        signed artefact; the desktop was rebuilt after this constant moved so the bundled page agrees with the file.
  * 0.3.0: 4_330_900 bytes = 4.3 MB — the S7 objects and the pending pass. The guard refused 4.2 first, as
  *        designed, and the DMG was rebuilt after this constant moved so the bundled page agrees with the file.
  * 0.2.7: 4_161_808 bytes = 4.2 MB, measured the same way. The guard refused the release again over
@@ -81,7 +84,7 @@ export const LCXOS_VERSION = '0.3.0';
  * download dialog shows. 4_070_285 / 1e6 = 4.1; the same bytes are 3.9 MiB, and picking
  * the other unit here would make the guard fail forever with both sides "correct".
  */
-export const LCXOS_DMG_MB = 4.3;
+export const LCXOS_DMG_MB = 4.4;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub

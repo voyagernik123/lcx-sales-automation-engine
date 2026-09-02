@@ -624,7 +624,18 @@ export function LpOptimizerPanel() {
   };
 
   if (err) return <PanelError error={err} onRetry={() => run(weights ?? undefined)} />;
-  if (!res) return null;
+  if (!res) {
+    /* RESERVE THE SPACE (THE PRODUCTION, P4). This panel now stands above the deck's other instruments; rendering nothing
+       until the engine answers made the page jump by a panel's height when it arrived, and the hint chips placed before the
+       jump were left beside empty air (keyboardday e2e: "expected one chip beside Decide, got []"). The skeleton is the
+       panel's shape at its resting height; it says what it is waiting for. */
+    return (
+      <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card" aria-busy="true" data-testid="lp-optimizer-loading" style={{ minHeight: 560 }}>
+        <div className="mb-2 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey"><SlidersHorizontal size={12} /> LP optimizer — scoring the bench…</div>
+        <p className="text-[10px] text-grey">The authored weights are being applied to the partner scorecard; the surface and the ranked list appear here.</p>
+      </section>
+    );
+  }
   const current = weights ?? Object.fromEntries(res.dimensions.map((d) => [d.key, d.weight]));
   return (
     <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card">

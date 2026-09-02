@@ -533,3 +533,38 @@ verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the 
   `ResizeObserver`; jsdom has none, the effect threw, the header never rendered, five header tests failed together. Both
   chrome hooks now measure once and return when `ResizeObserver` is undefined (also the honest behaviour on an old WebKit:
   a band measured once beats a thrown chrome). Gate run 3 running.
+- 2026-09-03 · **P4 WEB COMMITTED 8cdf9aa** (gate run 3 clean; pushed to lcx-sales main). verify-live next; then the desktop release v0.4.0.
+- 2026-09-03 · **P4 close-out in flight.** 8cdf9aa pushed (CI 33640413487 started). verify-live running with the P4 needles.
+  Desktop v0.4.0: six version homes bumped; the signed build gate (root ci-check + tauri build) running; then the DMG size
+  guard (read bytes → set the page's constant + history line → REBUILD), `release:dry`, `release`, CDN-verify, release commit.
+- 2026-09-03 · **Desktop v0.4.0 — a process catch.** `npm run build-gate` is the build's PRE-step (it composes root ci-check
+  and is what `tauri build` runs as beforeBuildCommand); run alone it gated the tree (all five stages green, perf OK, JS
+  841/850) and produced no bundle — the artefacts on disk were 0.3.0's. The real build (`npm run build:dmg`, signed) is
+  running; it re-runs the gate inside, which is the cost of one command being the truth.
+- 2026-09-03 · **Desktop v0.4.0 built and signed; THE DMG GUARD would fire, as designed.** `LCXOS_0.4.0_aarch64.dmg` is
+  4,370,551 bytes = 4.4 MB; the page said 4.3 (0.3.0's 4,330,900). `LCXOS_DMG_MB` → 4.4 with a 0.4.0 history line naming what
+  the 40 KB are (the scene module, the present path, the two studio maps + sidecars, the fixture code paths); rebuilding so
+  the page bundled inside the app agrees with the artefact, then `release:dry`. Pages still served the pre-P4 shell 35 min
+  after the push while Render had registered 8cdf9aa within a minute — a Pages-side delay or failed build; no Cloudflare
+  token here to read its log. verify-live still polling.
+- 2026-09-03 · **CI e2e red on 8cdf9aa — one real defect, found by the keyboard-day spec.** `flow 2 fast path`: press `f`,
+  land on Decide, expect its hint chip — "expected one chip beside Decide, got []". Cause: `LpOptimizerPanel` renders NOTHING
+  until the lp-rescore engine answers (`if (!res) return null`), then mounts a tall panel; since P4 moved it ABOVE Decide, the
+  page shifts after the chips are placed and the chip detaches from its target. The frame-budget and Tab-count marks in the
+  log were retries that then passed. Fixes: the LP panel reserves its space while loading (a skeleton of the panel's height),
+  and the hint chips re-place on layout shifts (ResizeObserver) — the general defect any async panel above a target would
+  cause. Pages: Cloudflare's check-run says in_progress (queued, not failed); Render registered the deployment at once.
+- 2026-09-03 · **Desktop v0.4.0: rebuilt with the 4.4 MB constant; `release:dry` clean — and it says DIRTY TREE.** The size
+  guard accepted 4.4 (DMG 4,370,514 B this build; 4,370,551 on the first — the bytes move by tens between builds, the tenth
+  of a megabyte does not). The build record marks the tree dirty (the bumps and the deck fix are uncommitted), and a release
+  is cut from a commit, not a working copy: order is e2e evidence → root gate → commit (fix + bumps) → push → REBUILD from
+  the commit → release. 21 GL chunks carry shader source (7 renderer surfaces + 14 shared) — the presenter is shared, not
+  seven copies.
+- 2026-09-03 · **The deck fix is measured: flow 2 passes on a fresh dev server (2 passed, 11.2 s; the chip is beside Decide;
+  4 presses to an armed decide field via the hint layer).** Root gate running on the fix + v0.4.0 bump tree. Pages for 8cdf9aa
+  has read `in_progress` for 45 minutes (Cloudflare check-run; dashboard: dash.cloudflare.com → Workers & Pages →
+  lcx-sales-automation-engine → deployment 73aed997) while Render deployed at once — if it never lands, that dashboard is
+  Nik's to open; the next push will queue behind it either way.
+- 2026-09-03 · **verify-live 8cdf9aa: TIMEOUT pages=0 render=1.** Render serves 8cdf9aa; Pages still serves the pre-P4 shell
+  after twenty probes (~30 min) and ~55 min since the push, its check-run `in_progress` throughout. Half-live is recorded as
+  half-live: the API is P4, the web is not yet. The fix commit will queue a second Pages build behind it.
