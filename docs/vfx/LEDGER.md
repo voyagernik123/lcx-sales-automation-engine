@@ -40,7 +40,7 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P1 DARK FIRST + THE STAGE | DONE · **LIVE both surfaces** (Pages: `data-stage` in the entry; Render deployment 6219260694 `success`) | 08cfe3f | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
 | P2 THE CAMERA MOVES | **LIVE** | 530f0d9 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
 | P3 THE FIDELITY STACK | **LIVE** | 5c22d09 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
-| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **WEB COMMITTED · verify pending · desktop 0.4.0 next** | sha in §5 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
+| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **DESKTOP v0.4.0 PUBLISHED · WEB pushed (Render live; Pages build queued) · LIVE flip waits for PAGES LIVE** | 8cdf9aa · 3c29de8 · v0.4.0 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
 | P5 GPU CHARTS EVERYWHERE | PENDING | | | |
 | P6 THE OBJECTS (glTF) | PENDING | | | |
 | P7 LIVENESS | PENDING | | | |
@@ -73,7 +73,13 @@ verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the 
 
 ## 4 · OPEN ITEMS
 
-- **Bytes — and WHICH chunk.** P1 moved initial JS 828 → 838/850 and the largest chunk 426 → 435/440. Measured on the
+- **Bytes — MEASURED per module (2026-09-03, sourcemap attribution of the 448 KB shell chunk, 98% attributed).** The shell is
+  not the engine and not the routes: `src/data/competitors.ts` 66 KB, `components/inspect/*` 56 KB (the payload registry),
+  lucide-react 39 KB, `components/layout/*` 34 KB, `src/data/states.ts` 19 KB, `router.tsx` 15 KB, `data/products.ts` 7.6 KB,
+  `data/requirements.ts` 5.9 KB, `data/redFlags.ts` 5.1 KB. ~104 KB of DATA modules ride in the shell eagerly — the class the
+  bundle checker recorded as the one split that worked (moving prose/data out of shared modules). P5 opens by lazy-loading
+  the two datasets at their consumers (measured target: shell 438 → ≤ 360 KB) before any chart hook lands in a shared component.
+- **Bytes — and WHICH chunk (P1 note).** P1 moved initial JS 828 → 838/850 and the largest chunk 426 → 435/440. Measured on the
   built dist: the 435 KB chunk is the SHELL (`index-*.js`, carries `data-stage`; the stage's inline present shader is in
   it), not the engine — so P3's SMAA/bloom and P6's glTF loader (engine chunk, lazy) do not press it, but ANY shell growth
   does, and 5 KB is left. Before P5 (chart hooks in shared components) split the shell: `check-bundle.mjs:60` already
@@ -579,3 +585,9 @@ verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the 
   to show` (`holdings-register-empty` not found) — a marketing page P4 never touched, green in the root gate that ran beside
   it. Recorded as the worker-contention class (memory: vitest file count shifts workers), not fixed by hand; the solo build's
   gate is the arbiter.
+- 2026-09-03 · **DESKTOP v0.4.0 PUBLISHED.** `npm run release` from eb0ed00 (clean tree): tag v0.4.0 on voyagernik123/lcx-terminal-releases;
+  latest.json serves 0.4.0 (confirmed after 1 attempt); DMG (4,371,024 B, served content-length equal) and latest.json fetch
+  anonymously HTTP 200; the served signature equals the local .sig (404 chars). Installed locally: /Applications/LCXOS.app reports
+  0.4.0 (adhoc signature, as every release before it). The web's LIVE flip still waits on Cloudflare Pages (queued since 14:11Z).
+- 2026-09-03 · **CI 33643251167 on 3c29de8: GREEN on both jobs** — the deck fix passes the keyboard-day spec in CI too (the
+  8cdf9aa run's e2e red is closed by it). Cloudflare Pages check-runs for 8cdf9aa and 3c29de8 both still `in_progress`.

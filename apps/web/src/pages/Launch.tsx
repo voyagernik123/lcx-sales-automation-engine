@@ -66,7 +66,8 @@ export const LCXOS_VERSION = '0.4.0';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  *
- * 0.4.0: 4_370_551 bytes = 4.4 MB — THE PRODUCTION P0–P4: the stage's scene module, the one present path (pipeline +
+ * 0.4.0: 4_371_024 bytes = 4.4 MB (the published artefact; three builds of this tree read 4_370_551, 4_370_514 and
+ *        4_371_024 — tens of bytes move between builds, the tenth of a megabyte does not) — THE PRODUCTION P0–P4: the stage's scene module, the one present path (pipeline +
  *        FXAA), the two studio environment maps and their sidecars, the hero fixtures' code paths. Measured from the
  *        signed artefact; the desktop was rebuilt after this constant moved so the bundled page agrees with the file.
  * 0.3.0: 4_330_900 bytes = 4.3 MB — the S7 objects and the pending pass. The guard refused 4.2 first, as
