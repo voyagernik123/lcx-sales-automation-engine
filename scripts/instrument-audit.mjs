@@ -16,7 +16,9 @@
  * THE SIX NUMBERS, and which pass owns each:
  *
  *   1  motion       STATIC   ambient `animate-*` occurrences vs files wiring the feel layer, per route closure
- *                   RUNTIME  CSS animations still running after the page has settled ("motion at rest")
+ *                   RUNTIME  CSS animations still running after the page has settled ("motion at rest") — sampled
+ *                            BEFORE the continuity navigation (close-out fix: the first version probed 500 ms after
+ *                            navigate-and-back, and read every entrance fade of the re-mounted route as motion at rest)
  *   2  clocks       STATIC   `setInterval` / `requestAnimationFrame` / `Date.now()` / `new Date()` call sites
  *                   RUNTIME  live intervals + rAF loops observed in a one-second window at rest
  *   3  continuity   STATIC   `startViewTransition` / `view-transition-name` occurrences
@@ -34,6 +36,7 @@
  * RUN     node scripts/instrument-audit.mjs            (starts vite on 5189, ~10 min)
  *         INSTRUMENT_STATIC_ONLY=1 node scripts/instrument-audit.mjs   (no browser, seconds)
  *         INSTRUMENT_ROUTES=/gps,/command-deck node …   (subset, for iteration)
+ *         INSTRUMENT_ANIM_TRACE=1 node …                (diagnostic: running animations sampled every 500 ms, +1.5→+5 s)
  */
 
 import { spawn, execSync } from 'node:child_process';
@@ -359,8 +362,19 @@ const READ_PAGE = () => {
     seenEl.add(el); textNodes += 1;
     if (/\d/.test(t)) figures += 1;
   }
-  const anims = document.getAnimations ? document.getAnimations().filter((x) => x.playState === 'running').length : -1;
+  const running = document.getAnimations ? document.getAnimations().filter((x) => x.playState === 'running') : null;
+  const anims = running ? running.length : -1;
+  // ATTRIBUTION (close-out): a count says "74"; the operator needs to know 74 of WHAT. Key = kind : name : target class.
+  const animationsBy = {};
+  for (const x of running ?? []) {
+    const t = x.effect && x.effect.target;
+    const cls = t && typeof t.className === 'string' ? t.className.split(/\s+/).slice(0, 3).join(' ') : (t && t.tagName) || '?';
+    const iter = x.effect && x.effect.getTiming ? x.effect.getTiming().iterations : '?';
+    const k = `${x.constructor.name}:${x.animationName || x.transitionProperty || 'web-animation'}:${cls}:iter=${iter}:t=${Math.round(Number(x.currentTime) || 0)}ms`.slice(0, 140);
+    animationsBy[k] = (animationsBy[k] || 0) + 1;
+  }
   return {
+    animationsBy,
     dark: document.documentElement.classList.contains('dark'),
     intervals: a ? a.intervals.size : -1,
     intervalSites: a ? [...a.intervals].map((id) => a.intervalSites[id] ?? 'unknown') : [],
@@ -399,10 +413,38 @@ async function captureRoute(browser, route, theme) {
     let reached = 'REACHED';
     try { await anchor.waitFor({ state: 'visible', timeout: 20_000 }); } catch { reached = 'SHELL_NEVER_MOUNTED'; }
     await page.waitForTimeout(1500);
+    if (process.env.INSTRUMENT_ANIM_TRACE === '1') {
+      // DIAGNOSTIC TRACE (close-out): sample the running animations every 500 ms for 4 s — a one-shot entrance
+      // finishes (count falls to 0); a remount loop shows the count holding with currentTime cycling.
+      for (let i = 0; i < 8; i++) {
+        const smp = await page.evaluate(() => {
+          const r = document.getAnimations().filter((x) => x.playState === 'running');
+          const ts = r.map((x) => Math.round(Number(x.currentTime) || 0));
+          return { n: r.length, min: Math.min(...ts), max: Math.max(...ts), nodes: document.querySelectorAll('.react-flow__node').length };
+        });
+        console.log(`    trace ${route.path} ${theme} +${1500 + i * 500}ms: running ${smp.n} (t ${smp.n ? smp.min + '–' + smp.max : '—'} ms) · react-flow nodes ${smp.nodes}`);
+        await page.waitForTimeout(500);
+      }
+    }
     // Clocks at rest: rAF callbacks in exactly one second after settle.
     const raf0 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
     await page.waitForTimeout(1000);
     const raf1 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
+    // MOTION AT REST is read HERE — 2.5 s after load, before anything below touches the page. The runtime probe
+    // after the continuity click ran on a route that had just re-mounted (navigate → back), so a 0.4 s entrance
+    // fade on 74 ontology nodes read as 74 animations "at rest" 300 ms into their re-entry. Same attribution key.
+    const atRest = await page.evaluate(() => {
+      const running = document.getAnimations ? document.getAnimations().filter((x) => x.playState === 'running') : [];
+      const by = {};
+      for (const x of running) {
+        const t = x.effect && x.effect.target;
+        const cls = t && typeof t.className === 'string' ? t.className.split(/\s+/).slice(0, 3).join(' ') : (t && t.tagName) || '?';
+        const iter = x.effect && x.effect.getTiming ? x.effect.getTiming().iterations : '?';
+        const k = `${x.constructor.name}:${x.animationName || x.transitionProperty || 'web-animation'}:${cls}:iter=${iter}`.slice(0, 120);
+        by[k] = (by[k] || 0) + 1;
+      }
+      return { animations: running.length, animationsBy: by };
+    });
     // Continuity: one client-side navigation and back, THROUGH THE APP'S OWN LINKS. The first version
     // faked it with pushState + a synthetic popstate, which React Router serves from its history
     // listener — never through `router.navigate`, which is where S3 defaults the view transition. A
@@ -433,7 +475,8 @@ async function captureRoute(browser, route, theme) {
     const stem = `${route.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
     let shot = null;
     try { const png = await page.screenshot({ timeout: 15_000 }); writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } catch { /* a missing shot is reported as such */ }
-    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, nav, pageErrors: errs.slice(0, 5), shot };
+    // `animations` = at rest (before the navigation); the post-return count travels beside it, never as the finding.
+    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, nav, pageErrors: errs.slice(0, 5), shot };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }

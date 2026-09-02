@@ -63,21 +63,20 @@
 | S4 THE WATCH | DONE · **LIVE both surfaces** (Pages probe 3: JS has `stated prior` + `/v1/watch?since=`, CSS FREE of `pulse-beacon`; Render deployment 6210174494 `success`) | 37fa9f6 | `docs/instrument/audit/after-s4/BASELINE.md` | ambient **49 → 28** (beacon 10 → 0, pulse 13 → 2 in LoadingSkeleton; spin/slide-in unchanged by design); routes with CSS motion at rest **77 → 1** (/ontology = React Flow animated edges → S5); `GET /v1/watch?since=` entitlement-first, stated prior, `absent[]`; ONE arrival store, three readers; feel wired in `invoke.ts`; initial JS 813 → 820/850; ratchets `oneWatch.test.ts` + api `watch.test.ts`; `/v1/watch` declared in the compartment register |
 | S5 FLOORS ARE DATA | DONE · **LIVE both surfaces** (Pages probe 1: `do not hold` + `Holdings declaration` present, `import("./shared-` ABSENT from the entry; Render deployment 6213239582 `success`; entry chunk 427,034 → 426,848 B) | 6b2f0dc | `docs/instrument/audit/after-s5/BASELINE.md` + `APP_SWEEP.md` | GL contexts at rest **77 → 2** (/select Forge by design; /ontology orrery default-ON, census counts calls); shell carries GL true → false; X1 REMOVED by its own header's measurement; E1 RETIRED by the scorecard's dichotomy; GL budget re-pinned 3 → 1 with a pinned count of 15 routes at cap; THE JOIN: 18 inspector types across API/web/registry with per-group entitlement and WITHHELD groups (pre-S5 sales leak closed); 7 lazy payloads; `ReliefWatchLine` on six reliefs; app sweep 6/7 reached, 0 findings, 0 worse in light (sweep fixed for default-ON toggles); initial JS 820/850, largest 417/440; hex census held at 125 after catching my own +7; ratchets `oneFloor.test.ts` + api `links.test.ts`; four gates, each red one real |
 | S6 THE TERMINAL | DONE · **LIVE both surfaces** (Pages probe 1: `fig-marks` in the entry; Render deployment 6213884207 `success`) | b442dec | `docs/instrument/audit/after-s6-fixtures/BASELINE.md` + `after-s6/` | fixture mode made the density measure honest (before median **27.5** with fixtures, reliefs off); `<Fig>` (value by kind, delta since the ARRIVAL mark, age by staleness on the one clock, source kind, `compare`, `frame`, undated/— refusals, anchor) + `figAddress` registry (g-chord chip, palette rows); all eight desks re-laid; 11 px floor enforced (23 literals); density after: distribution 8 → 59 (×3 MET), gps 19 → 51, wbr 23 → 47, marketing 8 → 8 (refuses by design), command-deck 32 → 60, intel 48 → 91, regulatory 64 → 71 (all UNDATED — dataset has no instant), pipeline 126 → 128; **median 27.5 → 59.5 (×2.16); 1 of 4 targets met, 2 short, 1 refused — reported as measured**; standing metrics held; gate clean first run |
-| S7 THE OBJECT | **IN PROGRESS** | — | — | per "S7 BUILD SPEC" below — the PIPELINE and its calibration first (Standard vs AgX on a #2C6BFF patch, decoded from bytes), then the objects in order: /lcxos hero, launch poster, DMG plate beside the generated one, print-sheet mark; ratchet `oneObject.test.ts` |
+| S7 THE OBJECT | DONE · **LIVE both surfaces** (Pages probe 2: entry has `data-object`, GPS chunk has `forge-print.webp`; Render deployment 6214200786 `success`) | 4bb9389 | `docs/instrument/audit/after-s7/BASELINE.md` (dir rides with the close-out commit) | pipeline `scripts/blender/` (build from E8's numbers · render sets Standard explicitly · calibrate · encode with budget · compose); calibration pair Standard **#2C6BFF exact** / AgX #467ECF; five WebP objects 115,284 B incl. sidecars (headroom 300 KB); `/lcxos` hero + sign-in poster via `ForgeStill` (one `<img>` per theme, width/height declared), DMG composite 35,570 B **beside, not wired**, print mark 6,618 B in the GPS dateline; instrument rows for `/lcxos` + `/select` IDENTICAL to after-s6 (no GL, no animation, no timer added); ratchet `oneObject.test.ts` 6/6; gate clean first run |
+| PROGRAM CLOSE-OUT | **IN PROGRESS** | — | `docs/instrument/audit/after-s7-full/` (79 routes × 2 themes, fixtures ON) | re-measure ALL of §1 against the plan's stated targets; `docs/instrument/SCORECARD.md` = the honest scorecard (met / short / refused by design / never measurable as stated); commit with `after-s7/` + `after-s7-full/`; push; verify by SHA |
 
-**NEXT ACTION (S7, 2026-09-02):** Steps (1)–(6) of S7 are DONE and recorded in §5 (pipeline + calibration pair
-Standard `#2C6BFF` exact / AgX `#467ECF`; four objects: `/lcxos` hero + sign-in poster via `ForgeStill.tsx`, DMG
-composite beside the generated plate NOT wired, print mark in `GpsPrint.tsx`; ratchet `oneObject.test.ts` 6/6).
-(7) gate from ROOT is RUNNING → scratchpad `gate-s7-1.log` (needs 0 `npm error` AND all five stage totals);
-(8) after the gate — never concurrently, both build into `apps/web/dist` — instrument capture of `/lcxos` + `/select`
-both themes into `docs/instrument/audit/after-s7/` (`INSTRUMENT_ROUTES=/lcxos,/select INSTRUMENT_STATIC_ONLY=1`),
-checking the still is the ONLY new bytes (no new GL context, no new animation, no CLS from a missing width/height);
-(9) commit with bytes + brand-hex evidence (draft: scratchpad `s7-commit-msg.txt`); push `lcx-sales dev:main`;
-`scratchpad/verify-live.sh <sha> --js 'data-object' --lazy-js 'forge-print.webp'` (ForgePlate is eager in the entry;
-Launch and GpsPrint are lazy — follow imports two levels); (10) flip S7 → DONE · LIVE here, in §2's table, and in
-memory `instrument-100x-plan.md`. THEN the program's close-out: re-measure ALL of §1 against the plan's targets
-with the instrument (full route sweep, both themes, fixtures ON for the desks) and write the honest scorecard —
-what was met, what fell short, what was refused by design — as `docs/instrument/SCORECARD.md`.
+**NEXT ACTION (CLOSE-OUT, 2026-09-02):** S0–S7 are ALL DONE · LIVE (S7 = 4bb9389, Pages probe 2 + Render
+6214200786; the three objects download from the live host at their exact byte counts). The close-out sweep is
+RUNNING: `INSTRUMENT_OUT_DIR=docs/instrument/audit/after-s7-full INSTRUMENT_FIXTURES=1 node scripts/instrument-audit.mjs`
+(79 routes × 2 themes, fixtures ON so the desks read their figures). When it lands: (1) `node scratchpad/closeout-numbers.mjs
+docs/instrument/audit/BASELINE.json docs/instrument/audit/after-s7-full/BASELINE.json` prints the S0→S7 table, the
+list of routes WORSE on any runtime metric (must be explained or fixed, never omitted), and the eight desks' figures;
+(2) fill the `{{…}}` placeholders in `docs/instrument/SCORECARD.md` FROM THAT OUTPUT (never from memory), keeping §4
+"what did NOT happen" honest; (3) §5 close-out checkpoint here; (4) commit `after-s7/` + `after-s7-full/` +
+SCORECARD + LEDGER (docs only — no gate needed beyond `git diff --stat` showing no source files); push
+`lcx-sales dev:main`; verify by SHA (`verify-live.sh <sha>` with no needles); (5) flip PROGRAM CLOSE-OUT → DONE here
+and in memory. The GPS items kept open by instruction (§4) are then the whole owner list — surface them, do not start them.
 
 ### S4 BUILD SPEC (grounded 2026-09-01; execute after S3 commits)
 **Sources, all already held (cite):** `audit_log(actor, action, entity, entity_id, meta, created_at)` — 13 write
@@ -366,10 +365,24 @@ referenced from CI config.
 - **API:** `routes/__tests__/distGate.test.ts` "lets a NON-token campaign advance to live freely" returned 403 in
   the S2 full gate, passes in isolation, API tree untouched by S2 — same order-dependent class. Re-run per the
   3-run procedure before any claim; if it recurs, it is a latent race in the test's fixture isolation, not S2.
-- **DUMMY DATA FOUND BY S0's TIMER INVENTORY:** `pages/Dashboard.tsx` (route `/regulatory-dashboard`) runs a
+- ~~**DUMMY DATA FOUND BY S0's TIMER INVENTORY:** `pages/Dashboard.tsx` (route `/regulatory-dashboard`) runs a
   `Math.random` simulation every 4 s that fabricates "System" log lines (`isReal: false`) and merges them
-  with real audit rows — indistinguishable on screen. **S1 removes the simulation** (a fake feed cannot be
-  given a clock); the panel then shows only real audit logs, and says so when there are none.
+  with real audit rows — indistinguishable on screen.~~ **CLOSED by S1 (6e0e939):** the simulation is deleted; the
+  panel shows only real audit rows and says so when there are none.
+- **INSTRUMENT (close-out, 2026-09-02):** clock DRIFT was never measured as frames — S1's stated target was
+  "0 frames"; the instrument measures loops and intervals (both at their floor). A drift probe = two surfaces asked
+  for "now" inside one frame, difference in frames. Not built; the scorecard says so.
+- **INSTRUMENT:** the GL census counts `getContext` CALLS, not distinct canvases (`/ontology` orrery read 2 for
+  one live context in S5/S6). Count canvases with a live context instead.
+- **OWNER:** `/regulatory-dashboard` figures read UNDATED because the compiled dataset carries no instant — the
+  dataset needs a date, then `<Fig>` dates them without a code change.
+- **WEB (found by the close-out attribution):** `.animate-fadeIn` is used by `KpiTicker.tsx:84`,
+  `SidebarFieldNotes.tsx:42`, `SelectOperator.tsx:164`, `intel/DraftPanel.tsx:61` and DEFINED NOWHERE (globals.css
+  has `@keyframes fadeIn` but no class; tailwind.config has no `fadeIn` animation) — those four never animated.
+  Either define it as a 0.2 s one-shot or delete the four class names; a measurement is not the place to decide.
+- **OWNER (one look):** `apps/desktop/scripts/dmg-plate.rendered.png` (the Forge composited on the generated plate,
+  35,570 B) sits BESIDE `dmg-plate.png`; `tauri.conf.json:54` still points at the generated one. Wiring is one
+  path change after Nik has looked.
 
 ## 5 · CHECKPOINT LOG — append-only, newest last
 
@@ -777,3 +790,49 @@ referenced from CI config.
   right of `GpsPrintArtefact`'s dateline (`GpsPrint.tsx`; a DIV, since PrintStyles hides `header`), width/height
   declared, `alt=""`, PRINTS (not `br-no-print`). Ratchet `oneObject.test.ts` exempts the twin rule by the
   sidecar's own `purpose`, 6/6 green; gps suites 110/110. Objects dir now 5 webp + 4 sidecars + calibration.
+- 2026-09-02 · **S7 COMMITTED 4bb9389 · VERIFIED LIVE** (Pages probe 2: entry carries `data-object`, the GPS chunk
+  the entry imports carries `forge-print.webp`; Render 6214200786 `success`; the three objects download from the
+  live host at EXACTLY 16,712 / 33,974 / 6,618 B). Gate clean first run (57/1997 · 17/358 · 170+1/3532 · 199/2749 ·
+  2/20). After-s7 capture: `/lcxos` + `/select` rows IDENTICAL to after-s6. Budgets: JS 821/850 · CSS 113/140 ·
+  fonts 434/440 · largest 419/440 · passthrough 722 → **835**/1024 (the objects; headroom was 300).
+- 2026-09-02 · **CLOSE-OUT SWEEP #1** (`after-s7-full/`, 79 × 2, fixtures ON, HEAD 4bb9389) vs S0: vt 0 → 76 ·
+  CSS motion at rest 77 → 1 · rAF loops 76 → 0 · GL contexts 77 → 1 · max intervals 9 → 2 · errors 0 → 0 · median
+  figures 1 → 2 (desks: command-deck 1 → 60, pipeline 12 → 128, command 1 → 91, regulatory 64 → 71, distribution
+  1 → 59, marketing 1 → 8, gps 10 → 51, wbr 1 → 47) · static ambient 49 → 28, feel 5 → 6, timers 25 → 11, continuity
+  0 → 3, hex 125 → 125, shell GL true → false. **`closeout-numbers.mjs` lists every route WORSE on any runtime
+  metric — two, both examined:** (a) `/ontology` animations **2 → 136** = React Flow `animated: true` on every
+  `requires` edge (`hooks/useGraph.ts:170`) plus the highlighted path (`OntologyExplorer.tsx:153`) — S4 deferred it
+  to S5, S5 left it; with a populated graph it is one marching-dash CSS animation PER EDGE for as long as the page is
+  open, the last route with motion at rest. **FIXED:** both `animated: false` (direction is the arrowhead; pre-emption
+  stays the dashed stroke; the highlight keeps colour/width/glow); ratchet added to `oneWatch.test.ts` (no
+  `animated: true` in src). Gate running; the sweep is RE-RUN after it so the scorecard's numbers are one HEAD.
+  (b) `/select` rAF/s **4 → 5** = the sign-in Forge's designed idle (S3 read 4, S4–S6 read 5; threshold 10) —
+  measurement jitter on a by-design loop, not a regression; explained, not fixed. Also NOT a regression: GL contexts
+  2 → 1 under fixtures because relief preferences are seeded OFF there (the orrery), and `/ontology` fig 17 → 87 is
+  the fixture-populated graph.
+- 2026-09-02 · **CLOSE-OUT SWEEP #2 (after the edge fix) + THE INSTRUMENT'S OWN DEFECT.** `/ontology` still read
+  **74** animations at rest. New attribution in the probe (`animationsBy` = kind : name : target class : iterations :
+  elapsed) named them: **74 × `CSSAnimation:fadeIn` on the node card, iterations 1, elapsed 301–333 ms** — a 0.4 s
+  ENTRANCE fade, one per node, caught 300 ms in. A timed trace (`INSTRUMENT_ANIM_TRACE=1`, samples every 500 ms from
+  +1.5 s to +5 s) showed **0 running throughout** with all 74 nodes mounted. The probe order was the defect: the
+  continuity step clicks an in-app link, navigates away, `goBack()`, waits 500 ms, THEN runs the runtime probe — on a
+  route that had just RE-MOUNTED (its loader delays the diagram 200 ms, so the fades were 300 ms in). **FIXED in the
+  instrument:** motion at rest is sampled at +2.5 s BEFORE the navigation (`animations`, `animationsBy`); the
+  post-return count travels beside it as `animationsAfterReturn`, never as the finding. Consequence for the record:
+  S0's 77 were the sidebar beacon (unconditional, infinite — unaffected); the "1" after S4–S6 was `/ontology`, where
+  the marching edges WERE real (infinite; 62 of the 136 in sweep #1 — the `animated: false` fix stands on its own)
+  and the remainder was this artefact. Sweep #3 re-runs the full 79 with the corrected probe; the scorecard's motion
+  row is read from it. The `.animate-fadeIn` class used by KpiTicker/SidebarFieldNotes/SelectOperator/DraftPanel is
+  DEFINED NOWHERE (dead class — those elements never animated); left as found, noted in §4.
+- 2026-09-02 · **CLOSE-OUT SWEEP #3 (corrected probe, edges still) — THE NUMBERS THE SCORECARD CARRIES.** 79 × 2,
+  fixtures ON, all reached, theme correct, **0 page errors**. vt 0 → **76** · CSS motion at rest 77 → **0** · rAF loops
+  76 → **0** · GL contexts 77 → **1** (`/select`) · max intervals 9 → **2** · median figures 1 → 2 (max 86 → 128) ·
+  static ambient 49 → 28 · feel files 5 → 6 · timers 25 → 11 · clock reads 99 → 93 · continuity 0 → 3 · hex 125 → 125 ·
+  shell GL true → false. Desks (fixtures): command-deck 32 → 60 · pipeline 126 → 128 · command 48 → 91 · regulatory
+  64 → 71 · distribution 8 → 59 (×7.38, the one ×3 MET) · marketing 8 → 8 (refuses) · gps 19 → 51 (×2.68) · wbr 23 →
+  **45** (×1.96; S6 read 47 — two figures at the fold, ±2 by capture). Routes WORSE than S0 on any runtime metric:
+  **`/select` rAF 4 → 5 only** (the Forge's designed idle; threshold 10). Budgets: JS 821/850 · CSS 113/140 · fonts
+  434/440 · largest 419/440 · passthrough 835/1024. `docs/instrument/SCORECARD.md` filled FROM `BASELINE.json` by
+  `scratchpad/fill-scorecard.mjs` (no number typed from memory; placeholders left: none). Gate running for the
+  close-out commit (code: `useGraph.ts`, `OntologyExplorer.tsx`, `oneWatch.test.ts`, `instrument-audit.mjs`; docs:
+  SCORECARD, LEDGER, `after-s7/`, `after-s7-full/`).

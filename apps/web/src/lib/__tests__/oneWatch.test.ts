@@ -41,6 +41,13 @@ describe('the watch', () => {
     expect(offenders).toEqual(['components/shared/LoadingSkeleton.tsx']);
   });
 
+  it('no React Flow edge marches at rest (`animated: true` is one CSS animation per edge, for as long as the page is open)', () => {
+    // The close-out sweep read 136 running animations on /ontology with a populated graph — the last route with
+    // motion at rest. Direction is the arrowhead; the dash was motion without information.
+    const offenders = walk(SRC).filter((f) => /\banimated:\s*true\b/.test(strip(readFileSync(f, 'utf8')))).map(rel).sort();
+    expect(offenders).toEqual([]);
+  });
+
   it('the governed-action invoker plays the feel itself', () => {
     const src = strip(readFileSync(join(SRC, 'components/command/invoke.ts'), 'utf8'));
     expect(src).toMatch(/\bcommit\(/);

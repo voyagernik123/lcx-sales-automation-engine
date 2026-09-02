@@ -167,7 +167,11 @@ export function useGraph({ colorBy, activeLayers, timelineStep }: UseGraphParams
       source: e.source,
       target: e.target,
       type: 'smoothstep',
-      animated: e.type === 'requires' && !isPreempted,
+      // STILL AT REST (INSTRUMENT S4 → close-out). `animated: true` is React Flow's marching-dash keyframe, one CSS
+      // animation per edge for as long as the page is open — the close-out sweep read 136 of them on /ontology with a
+      // populated graph, the one route left with motion at rest. Direction is already the arrowhead (`markerEnd`);
+      // the dash added nothing but motion. Pre-emption still reads as the dashed stroke below.
+      animated: false,
       label: e.type,
       labelStyle: { fontSize: 8, fill: isPreempted ? '#cbd5e1' : '#64748b', fontFamily: 'monospace' },
       style: {

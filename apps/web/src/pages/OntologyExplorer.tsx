@@ -150,7 +150,9 @@ export function OntologyExplorer() {
       if (onPath) {
         return {
           ...e,
-          animated: true,
+          // The highlighted path is carried by colour, width and the glow below — not by marching dashes, which
+          // would run for as long as the selection stands (the instrument counts them as motion at rest).
+          animated: false,
           style: {
             ...e.style,
             stroke: '#06b6d4',
