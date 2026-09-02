@@ -24,6 +24,8 @@
  * ground — a steel watch on white — so light mode gets a BRIGHT STUDIO and dark mode keeps the
  * near-black room. Same object, two lighting environments, which is what a real product shot does.
  */
+import { ForgeStill } from './ForgeStill';
+
 export function ForgePlate() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-20">
@@ -37,6 +39,11 @@ export function ForgePlate() {
         className="absolute inset-0 hidden dark:block"
         style={{ background: 'radial-gradient(120% 95% at 38% 62%, #101a2e 0%, #080d18 55%, #04060b 100%)' }}
       />
+      {/* S7: THE POSTER. The same object the live GL layer draws, as a still — it paints as soon as its bytes
+        * arrive (before the GL chunk) and it IS the fallback for no WebGL2, a refused target and reduced motion.
+        * `ForgeBackdrop` creates its stage with `alpha: false`, so when the live object draws it covers this
+        * completely; the two never composite. Rule 1: the flat fallback is the object, not a gradient. */}
+      <ForgeStill variant="poster" priority className="absolute inset-0 h-full w-full object-cover" />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Download } from 'lucide-react';
 import { LcxMark } from '@/components/brand/LcxMark';
+import { ForgeStill } from '@/components/brand/ForgeStill';
 import { safeHref } from '@/lib/safeHref';
 import { LaunchServices } from '@/pages/LaunchServices';
 
@@ -135,6 +136,13 @@ export function Launch() {
           One place to work the pipeline, the partners and the regulatory path — where every
           action is gated on who you are, attributed to you, and written down.
         </p>
+
+        {/* THE OBJECT (S7 of INSTRUMENT_100X_PLAN). The Forge, rendered headless from E8's own numbers and
+          * calibrated so the brand blue decodes from the bytes exactly; one WebP per theme, width and height
+          * declared so nothing shifts when it arrives. Still — the arrival is the platform's only motion. */}
+        <figure className="mt-10 overflow-hidden rounded-xl border border-line/70 bg-card shadow-card">
+          <ForgeStill variant="hero" className="block h-auto w-full" />
+        </figure>
 
         {/* THE DOWNLOAD MOMENT.
           * It sits immediately under the positioning sentence, above everything

@@ -1,0 +1,44 @@
+{
+  "blender": "5.2.0 LTS",
+  "bytes": 2000121,
+  "display": "sRGB",
+  "encoded": {
+    "1x": {
+      "bytes": 13470,
+      "path": "apps/web/public/objects/forge-dark.webp",
+      "sha256_16": "4b5fe911036e0a60",
+      "size": [
+        1200,
+        720
+      ]
+    },
+    "2x": {
+      "bytes": 33974,
+      "path": "apps/web/public/objects/forge-dark@2x.webp",
+      "sha256_16": "c868694ac6264357",
+      "size": [
+        2400,
+        1440
+      ]
+    },
+    "budgetKb": 120,
+    "encoder": "PIL 11.3.0 libwebp",
+    "quality": 86,
+    "withinBudget": true
+  },
+  "engine": "CYCLES",
+  "exposure": 0.0,
+  "format": "PNG",
+  "gamma": 1.0,
+  "look": "None",
+  "resolution": [
+    2400,
+    1440
+  ],
+  "samples": 96,
+  "scale": 2.0,
+  "sha256_16": "ec608a99266385bd",
+  "source": "/Users/nik/Downloads/usclaude-main/scripts/blender/forge-dark.blend",
+  "transform": "Standard",
+  "transparent": false
+}

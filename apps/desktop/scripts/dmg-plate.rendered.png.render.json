@@ -1,0 +1,20 @@
+{
+  "base": "apps/desktop/scripts/dmg-plate.png",
+  "object": "../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/ca9efea7-0539-425e-971d-85875d5b9643/scratchpad/forge/forge-light-plate@2x.png",
+  "placed": {
+    "x": 520,
+    "y": 646,
+    "w": 280,
+    "h": 168
+  },
+  "constraints": [
+    "light ground (Finder labels are dark)",
+    "mark from lcx-mark.svg, never redrawn",
+    "positions from tauri.conf.json",
+    "no wording"
+  ],
+  "wired": false,
+  "decision": "the owner's one look (plan \u00a79) \u2014 tauri.conf.json still points at the generated plate",
+  "bytes": 35570,
+  "sha256_16": "f7a3998ba120eee6"
+}

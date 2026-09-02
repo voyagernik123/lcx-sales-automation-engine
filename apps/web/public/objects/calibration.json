@@ -1,0 +1,25 @@
+{
+  "purpose": "Brand fidelity is decided from the encoded bytes, never read back through Blender's colour management. A flat emission patch of the brand blue is rendered under each transform and decoded with PIL.",
+  "patchHex": "#2C6BFF",
+  "blender": "5.2.0 LTS",
+  "readings": {
+    "Standard": {
+      "decoded": "#2C6BFF",
+      "exact": true
+    },
+    "AgX": {
+      "decoded": "#467ECF",
+      "exact": false,
+      "role": "negative control \u2014 must NOT be exact; the plan measured #467ECF"
+    }
+  },
+  "rule": "Every object in this directory was rendered with view_transform Standard (see each .render.json). Nothing ships when the Standard patch is not exact or the AgX patch is.",
+  "measuredAt": "2026-09-02",
+  "scripts": [
+    "scripts/blender/calibrate.py",
+    "scripts/blender/brand_hex.py",
+    "scripts/blender/render.py",
+    "scripts/blender/build_forge.py",
+    "scripts/blender/encode.py"
+  ]
+}

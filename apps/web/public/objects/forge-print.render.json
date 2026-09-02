@@ -1,0 +1,36 @@
+{
+  "blender": "5.2.0 LTS",
+  "bytes": 1969446,
+  "display": "sRGB",
+  "encoded": {
+    "1x": {
+      "bytes": 6618,
+      "path": "apps/web/public/objects/forge-print.webp",
+      "sha256_16": "59dd378bc86adb3a",
+      "size": [
+        600,
+        360
+      ]
+    },
+    "budgetKb": 30,
+    "encoder": "PIL libwebp",
+    "purpose": "print-sheet mark: paper is the budget, one small file, no @2x",
+    "quality": 84,
+    "withinBudget": true
+  },
+  "engine": "CYCLES",
+  "exposure": 0.0,
+  "format": "PNG",
+  "gamma": 1.0,
+  "look": "None",
+  "resolution": [
+    2400,
+    1440
+  ],
+  "samples": 96,
+  "scale": 2.0,
+  "sha256_16": "f668eadfd824b742",
+  "source": "/Users/nik/Downloads/usclaude-main/scripts/blender/forge-light.blend",
+  "transform": "Standard",
+  "transparent": false
+}

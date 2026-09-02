@@ -62,21 +62,22 @@
 | S3 ONE CAMERA | DONE · **LIVE both surfaces** (Pages needles probe 3; Render deployment 6209660953 `success`) | 6a2c04b | `docs/instrument/audit/after-s3/BASELINE.md` | routes attempting a view transition on a REAL client navigation **0 → 76 of 79** (the 3 at zero — /lcxos /portal /select — have `linkCount 0`: no in-app link, so "not navigated", not "cut"); continuity call sites 0 → 3; rAF at rest still 0; intervals still heartbeat + `@vite/client` only; WebKit visible run `ready` 212 ms / `finished` 452 ms; ratchet `oneCamera.test.ts`; the instrument caught the `viewTransition: undefined` clobber |
 | S4 THE WATCH | DONE · **LIVE both surfaces** (Pages probe 3: JS has `stated prior` + `/v1/watch?since=`, CSS FREE of `pulse-beacon`; Render deployment 6210174494 `success`) | 37fa9f6 | `docs/instrument/audit/after-s4/BASELINE.md` | ambient **49 → 28** (beacon 10 → 0, pulse 13 → 2 in LoadingSkeleton; spin/slide-in unchanged by design); routes with CSS motion at rest **77 → 1** (/ontology = React Flow animated edges → S5); `GET /v1/watch?since=` entitlement-first, stated prior, `absent[]`; ONE arrival store, three readers; feel wired in `invoke.ts`; initial JS 813 → 820/850; ratchets `oneWatch.test.ts` + api `watch.test.ts`; `/v1/watch` declared in the compartment register |
 | S5 FLOORS ARE DATA | DONE · **LIVE both surfaces** (Pages probe 1: `do not hold` + `Holdings declaration` present, `import("./shared-` ABSENT from the entry; Render deployment 6213239582 `success`; entry chunk 427,034 → 426,848 B) | 6b2f0dc | `docs/instrument/audit/after-s5/BASELINE.md` + `APP_SWEEP.md` | GL contexts at rest **77 → 2** (/select Forge by design; /ontology orrery default-ON, census counts calls); shell carries GL true → false; X1 REMOVED by its own header's measurement; E1 RETIRED by the scorecard's dichotomy; GL budget re-pinned 3 → 1 with a pinned count of 15 routes at cap; THE JOIN: 18 inspector types across API/web/registry with per-group entitlement and WITHHELD groups (pre-S5 sales leak closed); 7 lazy payloads; `ReliefWatchLine` on six reliefs; app sweep 6/7 reached, 0 findings, 0 worse in light (sweep fixed for default-ON toggles); initial JS 820/850, largest 417/440; hex census held at 125 after catching my own +7; ratchets `oneFloor.test.ts` + api `links.test.ts`; four gates, each red one real |
-| S6 THE TERMINAL | **IN PROGRESS** | — | — | per "S6 BUILD SPEC" below — FIXTURE MODE in the instrument first (an honest before), then `<Fig>`, marks, addresses, the terminal grid on the eight desks, ratchet `oneTerminal.test.ts` |
-| S7 THE OBJECT | not started | — | — | |
+| S6 THE TERMINAL | DONE · **LIVE both surfaces** (Pages probe 1: `fig-marks` in the entry; Render deployment 6213884207 `success`) | b442dec | `docs/instrument/audit/after-s6-fixtures/BASELINE.md` + `after-s6/` | fixture mode made the density measure honest (before median **27.5** with fixtures, reliefs off); `<Fig>` (value by kind, delta since the ARRIVAL mark, age by staleness on the one clock, source kind, `compare`, `frame`, undated/— refusals, anchor) + `figAddress` registry (g-chord chip, palette rows); all eight desks re-laid; 11 px floor enforced (23 literals); density after: distribution 8 → 59 (×3 MET), gps 19 → 51, wbr 23 → 47, marketing 8 → 8 (refuses by design), command-deck 32 → 60, intel 48 → 91, regulatory 64 → 71 (all UNDATED — dataset has no instant), pipeline 126 → 128; **median 27.5 → 59.5 (×2.16); 1 of 4 targets met, 2 short, 1 refused — reported as measured**; standing metrics held; gate clean first run |
+| S7 THE OBJECT | **IN PROGRESS** | — | — | per "S7 BUILD SPEC" below — the PIPELINE and its calibration first (Standard vs AgX on a #2C6BFF patch, decoded from bytes), then the objects in order: /lcxos hero, launch poster, DMG plate beside the generated one, print-sheet mark; ratchet `oneObject.test.ts` |
 
-**NEXT ACTION (S6 close-out, 2026-09-02):** S6 is BUILT on all eight desks (see §5); web tsc clean; ratchet
-`oneTerminal.test.ts` + desk suites green. Steps, in order, never concurrent: (1) **gate #1** from the ROOT →
-`/tmp/gate-s6.log` (0 npm errors, FIVE totals, perf budget); (2) after-s6 DENSITY capture — fixtures on, reliefs
-off, eight desks: `INSTRUMENT_FIXTURES=1 INSTRUMENT_ROUTES=/command-deck,/bd-pipeline,/command,/regulatory-dashboard,
-/distribution,/marketing,/gps,/wbr INSTRUMENT_OUT_DIR=…/docs/instrument/audit/after-s6-fixtures node
-scripts/instrument-audit.mjs`; (3) after-s6 FULL capture (79 routes, no API) into `…/after-s6/` for the standing
-metrics; (4) fill `<PERDESK>/<MEDIAN>/<FULL>/<JS>/<LARGEST>/<GATE>` in `scratchpad/s6-commit-msg.txt` — per desk
-before → after, median, and SAY which desks met ×3 and which did not; (5) `git add -A` (before-s6-fixtures too) +
-commit from ROOT + `git push lcx-sales dev:main`; (6) `bash scratchpad/verify-live.sh <sha> --js 'fig-marks'
---lazy-js 'first reading' --lazy-js ' figure · g'`; (7) flip S6 → DONE · LIVE, S7 → IN PROGRESS (its grounding is in
-§5: Blender 5.2.0 LTS present; DMG plate EXISTS 1320×840 by make-dmg-plate.mjs with four derived constraints; the
-plan's "missing" claim is stale), update memory.
+**NEXT ACTION (S7, 2026-09-02):** Steps (1)–(6) of S7 are DONE and recorded in §5 (pipeline + calibration pair
+Standard `#2C6BFF` exact / AgX `#467ECF`; four objects: `/lcxos` hero + sign-in poster via `ForgeStill.tsx`, DMG
+composite beside the generated plate NOT wired, print mark in `GpsPrint.tsx`; ratchet `oneObject.test.ts` 6/6).
+(7) gate from ROOT is RUNNING → scratchpad `gate-s7-1.log` (needs 0 `npm error` AND all five stage totals);
+(8) after the gate — never concurrently, both build into `apps/web/dist` — instrument capture of `/lcxos` + `/select`
+both themes into `docs/instrument/audit/after-s7/` (`INSTRUMENT_ROUTES=/lcxos,/select INSTRUMENT_STATIC_ONLY=1`),
+checking the still is the ONLY new bytes (no new GL context, no new animation, no CLS from a missing width/height);
+(9) commit with bytes + brand-hex evidence (draft: scratchpad `s7-commit-msg.txt`); push `lcx-sales dev:main`;
+`scratchpad/verify-live.sh <sha> --js 'data-object' --lazy-js 'forge-print.webp'` (ForgePlate is eager in the entry;
+Launch and GpsPrint are lazy — follow imports two levels); (10) flip S7 → DONE · LIVE here, in §2's table, and in
+memory `instrument-100x-plan.md`. THEN the program's close-out: re-measure ALL of §1 against the plan's targets
+with the instrument (full route sweep, both themes, fixtures ON for the desks) and write the honest scorecard —
+what was met, what fell short, what was refused by design — as `docs/instrument/SCORECARD.md`.
 
 ### S4 BUILD SPEC (grounded 2026-09-01; execute after S3 commits)
 **Sources, all already held (cite):** `audit_log(actor, action, entity, entity_id, meta, created_at)` — 13 write
@@ -277,6 +278,67 @@ command set (COMMAND_STUBS) and bd leads — reuse those payloads.
 
 **Budgets:** `<Fig>` ~2 KB eager (shell chunk) — initial JS must stay ≤ 850 (was 820 after S4; S5's X1
 removal recovers ~3.9 KB); fonts unchanged (Plex Mono is already loaded — NO third preloaded font).
+
+### S7 BUILD SPEC (grounded 2026-09-02; IN FORCE from S6's commit b442dec)
+
+**What S7 is, and is not (plan §S7, §3.3):** the things that reach a hand — rendered in Blender 5.2 headless on
+this M1, shipped as WebP beside their `.blend` and `render.py`, NEVER in CI, NEVER encoding a number. Exempt from
+the five kill tests as a brand artefact; bound by the byte budget and by brand fidelity DECODED FROM THE PNG BYTES
+(not read back through Blender's colour management). `view_transform = "Standard"` is the only transform that
+round-trips `#2C6BFF` exactly; AgX renders it `#467ECF` — that pair IS the calibration test, run on every render.
+
+**Grounded facts (§5, not remembered):** the repo holds NO `.blend`, `render.py` or Blender script; Blender
+**5.2.0 LTS** is installed (`/Applications/Blender.app`, `/opt/homebrew/bin/blender`); the DMG plate EXISTS
+(`apps/desktop/scripts/dmg-plate.png`, 1320×840, 29.8 KB, generated by `make-dmg-plate.mjs`, four derived
+constraints: light ground because Finder draws the labels dark, mark read from `lcx-mark.svg` never redrawn,
+positions read from `tauri.conf.json`, no wording); `/lcxos` is `pages/Launch.tsx` whose hero is `<LcxMark>` + an
+`<h1>` with no image; `SelectOperator` mounts the live E8 `ForgeBackdrop` over `ForgePlate` (a CSS sweep); `public/`
+= fonts + `lcx-mark.svg` + favicon (744 K; passthrough 722/1024 KB → ~300 KB headroom, budgeted PER ASSET).
+
+**1 · The pipeline (`scripts/blender/`).** `forge.blend` (the E8 object: machined disc on a plinth inside a
+polished ring, the materials E8's README authored — disc r0.30/m0.95 brushed, ring r0.13/m0.92 brand blue,
+plinth r0.52/m0.35, floor r0.88 dielectric; anisotropic values carried as the README says), `render.py`
+(headless: `blender -b scripts/blender/forge.blend -P scripts/blender/render.py -- --out <png> --scale 2
+--transform Standard`, EEVEE first, Cycles+OIDN on Metal only if a material needs it), `calibrate.py` (renders a
+flat patch of `#2C6BFF` under the same transform), `encode.mjs` (2× PNG → 1× WebP via Blender's own WEBP output
+at 1× after downsample, or `sips`+`cwebp` if present — whichever is on this machine, recorded), and
+`brand-hex.mjs`: a dependency-free PNG decoder (zlib inflate + filter reversal) that reads the calibration patch's
+bytes and asserts `#2C6BFF` exactly, with the AgX render as the NEGATIVE CONTROL (`#467ECF`) — an instrument that
+cannot move is not reading. Every render writes a sidecar `.render.json` (blender version, transform, seed,
+samples, digest) beside the asset.
+**Tooling, checked on this Mac 2026-09-02:** no `cwebp`, `avifenc` or ImageMagick → Blender writes WebP DIRECTLY
+(`WEBP` output confirmed in 5.2.0) and `sips` downsamples the 2× PNG; **PIL 11.3 is installed**, so `brand-hex`
+decodes the calibration patch from the PNG bytes with PIL (no hand-rolled decoder, and still outside Blender's
+colour management); AVIF is therefore NOT shipped (no encoder) — WebP only, said in the sidecar. In `-b` mode the
+view-transform enum enumerates lazily; `render.py` sets `scene.view_settings.view_transform = 'Standard'`
+explicitly and the sidecar records what was set AND what the calibration decoded.
+
+**2 · The objects, in order, each with its budget:**
+- **/lcxos hero** — the Forge object as `<picture>` (AVIF if the encoder exists, WebP always) at 1×/2×, ≤ 120 KB
+  total, `loading="eager"` `decoding="async"` with explicit width/height (no layout shift), alt text that names
+  the object, and a `prefers-reduced-motion`-independent STILL image (S4 rule: the arrival is the only motion).
+  Light AND dark variants (the page is themed), each calibrated.
+- **Launch / empty states** — `SelectOperator`'s no-WebGL and reduced-motion path today is `ForgePlate` (CSS). S7
+  adds the rendered poster as that fallback (rule 1: the flat fallback should be the object, not a gradient) at
+  ≤ 80 KB; the live GL Forge stays for capable hardware.
+- **DMG plate** — a Blender render of the SAME composition the generator draws, honouring all four constraints
+  (light ground, mark placed from `lcx-mark.svg` geometry — the mark itself is never re-modelled — positions from
+  `tauri.conf.json`, no wording). Produced BESIDE the generated plate; the choice is the owner's ("DMG background
+  needs one look", plan §9). Zero web bytes either way.
+- **Print sheets' plate** — the GPS proposal sheet (`GpsPrintSheets.tsx`) gets a small rendered mark in its
+  header (≤ 30 KB, printable `<img>`); paper is the budget: no full-bleed plate.
+- **App icon** — exists, generated from the mark's geometry (`make-icons.mjs`); S7 does NOT re-render it (the
+  brand book forbids redrawing the mark; a 3-D icon would be a redraw).
+
+**3 · Measured.** Per asset: brand hex from bytes (the calibration patch), bytes vs budget, dimensions; the
+`perf-budget` passthrough line before/after; `/lcxos` and `/select` captured by the instrument both themes with
+the images present (0 page errors, no layout shift — width/height attributes pinned by a test). **Refuses:** a
+render whose calibration patch is not `#2C6BFF` is not shipped; a render over budget is not shipped.
+
+**Ratchet `oneObject.test.ts`:** every shipped WebP under `public/objects/` has a sidecar with
+`transform: "Standard"` and `brandHex: "#2C6BFF"`; every `<img>` of them declares width and height; total
+`public/objects/` bytes ≤ the budget; no `.blend` is imported by web code; nothing under `scripts/blender/` is
+referenced from CI config.
 
 ## 3 · THE STANDING RULES OF THIS BUILD — the quality bar, made mechanical
 - **zsh trap (bit 2026-09-02):** `path` is zsh's PATH array — a loop variable named `path` empties PATH for the rest
@@ -612,6 +674,50 @@ removal recovers ~3.9 KB); fonts unchanged (Plex Mono is already loaded — NO t
   shippable here. S7 spec DRAFT in scratchpad `s7-spec-draft.md` (pipeline `scripts/blender/`, objects in order:
   /lcxos hero ≤ 120 KB, launch/empty poster ≤ 80 KB, DMG plate render BESIDE the generated one for Nik's one look,
   print-sheet mark ≤ 30 KB; app icon NOT re-rendered — a 3-D icon would redraw the mark; ratchet `oneObject.test.ts`).
+- 2026-09-02 · **S7 STEP 1 — THE PIPELINE, CALIBRATED.** `scripts/blender/`: `render.py` (headless wrapper; SETS
+  `display sRGB / view_transform / look None / exposure 0 / gamma 1` explicitly, never trusting the file; sidecar
+  `.render.json` with version, engine, transform, samples, bytes, digest), `calibrate.py` (a scene from nothing:
+  ortho camera, emission plane of the linearised hex, no world light), `brand_hex.py` (PIL decodes the PNG BYTES —
+  outside Blender's colour management — mode + mean over a 16² box; `--expect` refuses on mismatch; writes the
+  reading into the sidecar), `build_forge.py` (the E8 object FROM `docs/3d/e8/entry.ts` numbers: disc cyl r0.92
+  h0.16 @y0.30, ring torus R1.06 r0.055, plinth cyl r1.9 h0.09 @y0.045, floor plane 16; materials at the README's
+  AUTHORED perceptual values with RADIAL anisotropy tangents; camera target (0,0.34,0) d5.0 az22° el24° fov30°;
+  key light direction from the harness's arc at one phase; Y-up → Z-up mapping (x,y,z)→(x,−z,y); the `.blend` is
+  DERIVED and regenerated, not committed), `encode.py` (PIL LANCZOS 2×→1×, WebP 1×+2×, budget refusal, sidecar
+  carried). **CALIBRATION MEASURED:** Standard → **#2C6BFF exact** (mode = mean over 256 px); AgX → **#467ECF** —
+  the plan's negative control, reproduced to the byte. Nothing ships without this pair.
+- 2026-09-02 · **S6 VERIFIED LIVE** (Pages probe 1 after the live-check script learned to follow the entry's imports
+  two levels — `<Fig>` is shared by eight page chunks and Vite split it to depth 2; Render 6213884207 `success`).
+- 2026-09-02 · **S7 STEP 2 — FIRST RENDERS, LOOKED AT.** EEVEE @2× (15 s dark / 9 s light): the disc showed a
+  HOTSPOT, not the README's bar — EEVEE does not render anisotropic specular (the inputs were set; the engine
+  ignores them), so the object needs CYCLES, which the plan reserves for exactly "when a material needs it";
+  Metal GPU (Apple M1, 8 cores) exposed in `-b`; Cycles 96 spp + OIDN at 2400×1440 = 54 s. Also fixed from the
+  look: the harness's 16-unit floor showed its far edge as a band at this camera (→ 40), and brushed metal under
+  a flat world read dead (→ a zenith→horizon gradient sky per theme). Cycles v1: the radial anisotropic lobe
+  renders (correct for a lathe-brushed disc — the harness's tangents are radial too) but the 6° sun at energy 5
+  blew the centre to a white crescent → v2: 18° sun at 3.0 (dark) / 2.4 (light). Every iteration is a diff to
+  `build_forge.py`; the `.blend` is regenerated and git-ignored.
+- 2026-09-02 · **S7 v3 ACCEPTED (looked at, both themes).** v2 still blew the centre — the cause was GEOMETRIC, not
+  exposure: a RADIAL brush tangent on a flat cap collapses the anisotropic lobe into a starburst at the axis. A
+  lathe-brushed disc's grooves run CONCENTRIC (tangential), and the highlight stretches along the grooves — that
+  is the README's "broad swept bar" bending around the face. Blender expresses it as `Anisotropic Rotation 0.25`
+  (90°) with the RADIAL tangent node; the material VALUES stay as authored. Also v3: an AREA key (disk, 2.2 units,
+  260/180 W) replaced the point-like sun, with the harness's steep −0.95 drop relaxed to `--key-drop 0.62` so the
+  bar lands on the wall and ring; light theme world 0.9 and a slightly darker floor/plinth (`#DDE5F0`/`#B9C5D8`)
+  cured the wash-out. Cycles/Metal 53 s + 61 s @2400×1440, 96 spp, OIDN. Result: brushed metal with a soft bar, a
+  brand-blue polished ring, grounded plinth, no band, no blow-out — SHIPPABLE as hero and poster.
+- 2026-09-02 · **S7 OBJECTS 1–2 SHIPPED IN TREE.** Encoded (PIL LANCZOS 2×→1×, WebP q86): dark 13,470 + 33,974 B =
+  46.3 KB, light 16,712 + 40,982 B = 56.3 KB (budget 120 each); `public/objects/` 124 KB incl. sidecars and
+  `calibration.json` (Standard #2C6BFF exact, AgX #467ECF — written from the patches). `components/brand/ForgeStill.tsx`
+  renders ONE `<img>` for the document's theme (class read on mount + MutationObserver; two hidden images would
+  fetch both), width/height 1200×720 declared, eager for the hero. Wired: `/lcxos` hero (`Launch.tsx`, a figure under
+  the positioning sentence) and the sign-in POSTER inside `ForgePlate` beneath the live Forge (which draws
+  `alpha: false`, so it covers the poster completely when it runs; the poster is the pre-chunk paint and the
+  no-WebGL/refusal fallback — rule 1: the fallback is the object). Ratchet `lib/__tests__/oneObject.test.ts`
+  (sidecar Standard/None/sRGB + withinBudget + 1× bytes match; calibration pair; ≤ 300 KB; every object `<img>`
+  declares width+height and is not animated; no `.blend` import; CI never references `scripts/blender/`). tsc
+  clean; oneObject + brand + launch + selectOperator suites 36/36. NEXT: DMG plate composite BESIDE the generated
+  plate (Nik's one look), print-sheet mark, then gate → capture /lcxos + /select → commit.
 - 2026-09-02 · **S5 GROUNDING (read while S4's gate ran — cite, don't re-derive).** (1) The plan's `InspectorType`
   IS at **`apps/api/src/graph/links.ts:19`** (API side — my first grep searched web/shared only and I wrote
   "no longer exists"; corrected): 11 members `project deal handoff contact claim task signal listing decision
@@ -659,3 +765,15 @@ removal recovers ~3.9 KB); fonts unchanged (Plex Mono is already loaded — NO t
   an installed font on the volume). A Blender plate inherits all four. S7's remaining objects are therefore: verify the plate's provenance/resolution (below), the launch
   and empty states, the `/lcxos` hero, the print sheets' plate — rendered headless with `view_transform =
   "Standard"` (AgX renders #2C6BFF as #467ECF), brand hex decoded from PNG bytes. Never in CI; never data.
+- 2026-09-02 · **S7 OBJECTS 3–4 (DMG plate beside; print mark).** (3) `scripts/blender/compose_dmg.py` pastes a
+  TRANSPARENT Cycles render (`build_forge.py --shadow-catcher --fov 36`: the floor is a shadow catcher, so the
+  film carries the object and its soft shadow only — the first composite, without it, was a photo RECTANGLE of
+  studio ground in the band; fov 36 clears the plinth from the frame edge) at 280×168 px centred in the lower
+  band of the GENERATED plate → `apps/desktop/scripts/dmg-plate.rendered.png` 1320×840, **35,570 B**, sidecar
+  `wired: false`. All four `make-dmg-plate.mjs` constraints inherited (LCX White ground, mark read from the SVG,
+  positions from tauri.conf.json, no wording). **NOT wired** — `tauri.conf.json:54` still points at the generated
+  plate; whether a render earns replacing a flat one is Nik's one look (§4). (4) `public/objects/forge-print.webp`
+  600×360 q84 **6,618 B** (sidecar purpose `print`; no @2x — paper is the budget) placed as a 9 mm mark at the
+  right of `GpsPrintArtefact`'s dateline (`GpsPrint.tsx`; a DIV, since PrintStyles hides `header`), width/height
+  declared, `alt=""`, PRINTS (not `br-no-print`). Ratchet `oneObject.test.ts` exempts the twin rule by the
+  sidecar's own `purpose`, 6/6 green; gps suites 110/110. Objects dir now 5 webp + 4 sidecars + calibration.

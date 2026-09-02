@@ -502,7 +502,22 @@ export function GpsPrintArtefact(props: GpsPrintArtefactProps) {
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="font-mono text-[17px] font-bold uppercase tracking-wider">{title}</h1>
           <span className="font-mono text-micro uppercase tracking-wider text-grey">{GPS_ARTEFACT_LABEL[kind]}</span>
-          <span className="br-no-print ml-auto flex gap-1.5">
+          {/* S7 · THE OBJECT ON PAPER. The Forge, rendered and calibrated (public/objects), as a 9 mm mark at the
+              dateline's right — one 6.5 KB file, width and height declared, and it PRINTS (not `br-no-print`):
+              the plate the plan asks for, sized to what paper can afford. Decorative here; the title names the sheet. */}
+          <img
+            src="/objects/forge-print.webp"
+            width={600}
+            height={360}
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+            loading="lazy"
+            data-object="forge"
+            data-object-variant="print"
+            className="ml-auto h-9 w-auto self-center"
+          />
+          <span className="br-no-print ml-2 flex gap-1.5">
             <Button size="sm" variant="secondary" onClick={() => window.print()}>
               <Printer size={13} /> Print
             </Button>
