@@ -81,6 +81,9 @@ export type { CompositeSite, PrecompRefusal, BlendDest } from './look/precompens
 export { createPipeline, PIPELINE_SOURCES } from './look/pipeline.js';
 export type { Pipeline, PipelineOptions } from './look/pipeline.js';
 export { createAntialias, AA_SOURCE } from './look/aa.js';
+export { createPresenter, loadEnvironmentMap, PRESENT_BLOOM, PRESENT_COPY_FRAG, PRESENT_COPY_VERT } from './look/present.js';
+export type { Presenter, PresentOptions } from './look/present.js';
+export { uploadEnvironment, ENV_MAP_UNIT } from './env/sky.js';
 export type { Antialias } from './look/aa.js';
 
 /* L2 · SEMANTIC STATUS COLOUR — status is the third category, neither identity nor absence, and its

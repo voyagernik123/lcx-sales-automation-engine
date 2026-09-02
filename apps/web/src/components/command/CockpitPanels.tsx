@@ -50,14 +50,56 @@ export function ReadinessDial() {
     <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card">
       <div className="flex flex-wrap items-center gap-6">
         <div className="relative h-28 w-28 shrink-0">
-          <svg viewBox="0 0 100 100" className="h-full w-full">
-            <path d="M 15 78 A 40 40 0 1 1 85 78" fill="none" strokeWidth="8" className="stroke-line" strokeLinecap="round" />
-            <path d="M 15 78 A 40 40 0 1 1 85 78" fill="none" strokeWidth="8" strokeLinecap="round"
-              className={clsx('t-metric', tone.replace('text-', 'stroke-'))}
-              strokeDasharray={`${(r.score / 100) * 188.5} 300`} />
-            <line x1="50" y1="50" x2="50" y2="18" strokeWidth="2.5" strokeLinecap="round"
-              className={tone.replace('text-', 'stroke-')} transform={`rotate(${angle} 50 50)`} />
-            <circle cx="50" cy="50" r="3.5" className={tone.replace('text-', 'fill-')} />
+          {/* E1 REBUILT (THE PRODUCTION, P4): a machined gauge that CARRIES the deck's figures — the five weighted dials as
+              segments on the outer ring (arc length = weight, fill by each dial's own score tone), the composite as the needle
+              and the number. Shaded by the same rig that lights the GL stage: the bevel's highlight and shadow are the edge
+              tokens (--edge-hi/--edge-lo, generated from STAGE_LIGHT), so it sits in the room without a third GL context —
+              the deck is at the two-context cap (stage + the LP surface; glContextBudget.test.ts), and a gauge that costs a
+              context is a gauge that refuses on the very page it decorates. */}
+          <svg viewBox="0 0 100 100" className="h-full w-full" role="img" aria-label={`Launch readiness ${r.score} of 100`} data-testid="readiness-gauge">
+            <defs>
+              <radialGradient id="rg-bevel" cx="50%" cy="38%" r="70%">
+                <stop offset="0%" style={{ stopColor: 'rgb(var(--edge-hi) / 0.22)' }} />
+                <stop offset="55%" style={{ stopColor: 'rgb(var(--edge-hi) / 0.04)' }} />
+                <stop offset="100%" style={{ stopColor: 'rgb(var(--edge-lo) / 0.30)' }} />
+              </radialGradient>
+              <linearGradient id="rg-rim" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" style={{ stopColor: 'rgb(var(--edge-hi) / 0.55)' }} />
+                <stop offset="100%" style={{ stopColor: 'rgb(var(--edge-lo) / 0.55)' }} />
+              </linearGradient>
+            </defs>
+            {/* the dish: a bevelled face lit from the upper left */}
+            <circle cx="50" cy="54" r="44" fill="url(#rg-bevel)" stroke="url(#rg-rim)" strokeWidth="1.5" />
+            {/* the five dials as weighted segments on the outer ring — every mark here is a figure */}
+            {(() => {
+              const total = r.dials.reduce((acc, d) => acc + d.weight, 0) || 1;
+              const SPAN = 270, START = 135; // degrees, clockwise from the bottom-left
+              let acc = 0;
+              const R = 40, C = { x: 50, y: 54 };
+              const pt = (deg: number) => ({ x: C.x + R * Math.cos(((deg + START) * Math.PI) / 180), y: C.y + R * Math.sin(((deg + START) * Math.PI) / 180) });
+              return r.dials.map((d) => {
+                const a0 = (acc / total) * SPAN; acc += d.weight; const a1 = (acc / total) * SPAN - 2.5;
+                const p0 = pt(a0), p1 = pt(Math.max(a0 + 0.5, a1));
+                const large = a1 - a0 > 180 ? 1 : 0;
+                const toneCls = d.score >= 70 ? 'stroke-emerald-500' : d.score >= 40 ? 'stroke-amber-500' : 'stroke-red-500';
+                return (
+                  <path key={d.key} data-dial={d.key} data-score={d.score} data-weight={d.weight}
+                    d={`M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} A ${R} ${R} 0 ${large} 1 ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`}
+                    fill="none" strokeWidth="7" strokeLinecap="butt" className={toneCls} opacity={0.35 + 0.65 * Math.min(1, d.score / 100)} />
+                );
+              });
+            })()}
+            {/* the composite track and its filled share */}
+            <path d="M 21.7 82.3 A 40 40 0 1 1 78.3 82.3" fill="none" strokeWidth="2" className="stroke-line" />
+            <path d="M 21.7 82.3 A 40 40 0 1 1 78.3 82.3" fill="none" strokeWidth="2" strokeLinecap="round"
+              className={clsx('t-metric', tone.replace('text-', 'stroke-'))} strokeDasharray={`${(r.score / 100) * 188.5} 300`} />
+            {/* ticks every 10 */}
+            {Array.from({ length: 11 }, (_, k) => { const deg = (k / 10) * 270 + 135; const rad = (deg * Math.PI) / 180; const r0 = 30, r1 = k % 5 === 0 ? 25 : 27.5; return <line key={k} x1={50 + r0 * Math.cos(rad)} y1={54 + r0 * Math.sin(rad)} x2={50 + r1 * Math.cos(rad)} y2={54 + r1 * Math.sin(rad)} strokeWidth={k % 5 === 0 ? 1.2 : 0.7} className="stroke-grey/60" />; })}
+            {/* the needle, with its shadow cast by the key (upper left → shadow falls lower right) */}
+            <line x1="50" y1="54" x2="50" y2="26" strokeWidth="3" strokeLinecap="round" style={{ stroke: 'rgb(var(--edge-lo) / 0.45)' }} transform={`translate(1.2 1.6) rotate(${angle} 50 54)`} />
+            <line x1="50" y1="54" x2="50" y2="26" strokeWidth="2.5" strokeLinecap="round" className={tone.replace('text-', 'stroke-')} transform={`rotate(${angle} 50 54)`} data-testid="readiness-needle" data-angle={angle.toFixed(1)} />
+            <circle cx="50" cy="54" r="4" className={tone.replace('text-', 'fill-')} />
+            <circle cx="50" cy="54" r="1.6" style={{ fill: 'rgb(var(--edge-hi) / 0.8)' }} />
           </svg>
           <div className="absolute inset-x-0 bottom-0 text-center">
             <span className={clsx('font-mono text-h2 font-bold', tone)}>{r.score}</span>

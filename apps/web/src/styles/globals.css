@@ -587,3 +587,15 @@ path.state:hover {
   --lcx-edge: inset 1px 1px 0 0 rgb(var(--edge-hi) / var(--edge-hi-a)), inset -1px -1px 0 0 rgb(var(--edge-lo) / var(--edge-lo-a));
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--lcx-edge), var(--tw-shadow, 0 0 #0000);
 }
+
+/* THE CHROME FADE (THE PRODUCTION, P4). The glass layer (GLASS_CHROME_LAYER_CLASS's ::before) is masked to transparent in a
+   band the component measured as text-free: `--fade-a` → `--fade-b` (px from the element's start edge). Defaults of 100%
+   mean "no fade" until measured. Both prefixes: Tauri's WebKit still wants -webkit-mask-image. */
+.chrome-fade-y::before {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 var(--fade-a, 100%), transparent calc(var(--fade-a, 100%) + 48px), transparent calc(var(--fade-b, 100%) - 48px), #000 var(--fade-b, 100%), #000 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 var(--fade-a, 100%), transparent calc(var(--fade-a, 100%) + 48px), transparent calc(var(--fade-b, 100%) - 48px), #000 var(--fade-b, 100%), #000 100%);
+}
+.chrome-fade-x::before {
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 var(--fade-a, 100%), transparent calc(var(--fade-a, 100%) + 64px), transparent calc(var(--fade-b, 100%) - 64px), #000 var(--fade-b, 100%), #000 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 var(--fade-a, 100%), transparent calc(var(--fade-a, 100%) + 64px), transparent calc(var(--fade-b, 100%) - 64px), #000 var(--fade-b, 100%), #000 100%);
+}

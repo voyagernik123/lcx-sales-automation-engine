@@ -150,7 +150,7 @@ export function OntologyOrrery({
   const L = reading?.layout;
 
   return (
-    <div className="absolute inset-0">
+    <div data-hero="orrery" className="absolute inset-0">
       {showOrrery ? (
         <Suspense fallback={<div className="absolute inset-0">{children}</div>}>
           <OntologyOrreryGl input={input} onRefused={onRefused} onReading={onReading} />

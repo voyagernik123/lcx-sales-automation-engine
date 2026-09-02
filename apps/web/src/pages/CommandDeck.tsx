@@ -135,6 +135,10 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
 
       {/* The headline instrument — composite launch readiness (100X Phase 3) */}
       <ReadinessDial />
+      {/* THE DECK'S HERO (THE PRODUCTION, P4): the underwriting surface is the page's primary instrument, so it stands directly
+          under the readiness gauge, in the first viewport — four panels down it was below the fold at 1100 px and the judge
+          (the instrument's per-panel probe) read an empty rect. */}
+      <LpOptimizerPanel />
 
       {/* Counts strip */}
       {/* S6 · the counts strip as figures — dated by the overview's own `generatedAt`, each with its delta since
@@ -252,7 +256,6 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
       </div>
 
       {/* The engines as instruments (100X Phase 3) */}
-      <LpOptimizerPanel />
       <FunnelSimPanel />
 
       {/* Deep ontology — the strategy's own models, fully traceable (100X Phase 1) */}

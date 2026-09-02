@@ -263,7 +263,7 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
   const showRelief = wantRelief && refusal === null;
 
   return (
-    <div>
+    <div data-hero="surface">
       {showRelief ? (
         <Suspense fallback={<SurfacePlot {...plot} />}>
           {/*

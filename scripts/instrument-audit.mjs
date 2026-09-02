@@ -416,7 +416,7 @@ const READ_PAGE = () => {
 const glOffInit = () => { window.__LCX_GL_OFF = true; };
 
 /* THE LAB PAGE: two PNGs in, coverage + ΔE + two WebP thumbnails out. Runs in Chromium so it needs no decoder. */
-const LAB_MEASURE = async ({ on, off, thumbWidth }) => {
+const LAB_MEASURE = async ({ on, off, thumbWidth, rects = [] }) => {
   const load = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
   const [a, b] = await Promise.all([load(on), load(off)]);
   const W = Math.min(a.width, b.width), H = Math.min(a.height, b.height);
@@ -431,24 +431,28 @@ const LAB_MEASURE = async ({ on, off, thumbWidth }) => {
     X = f(X); Y = f(Y); Z = f(Z);
     return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
   };
+  // THE PANELS (P4): coverage inside each hero's rect, the number the P4 gate reads ("≥ 60% of ITS panel").
+  const panels = rects.map((r) => ({ name: r.name, x0: Math.max(0, Math.round(r.x)), y0: Math.max(0, Math.round(r.y)), x1: Math.min(W, Math.round(r.x + r.w)), y1: Math.min(H, Math.round(r.y + r.h)), changed: 0 }));
   let changed = 0, deSum = 0; const n = W * H;
   for (let i = 0; i < n; i++) {
     const o = i * 4;
     const d = Math.max(Math.abs(A[o] - B[o]), Math.abs(A[o + 1] - B[o + 1]), Math.abs(A[o + 2] - B[o + 2]));
     if (d > 8) {
       changed += 1;
+      if (panels.length) { const x = i % W, y = (i - x) / W; for (const p of panels) if (x >= p.x0 && x < p.x1 && y >= p.y0 && y < p.y1) p.changed += 1; }
       const p = lab(A[o], A[o + 1], A[o + 2]), q = lab(B[o], B[o + 1], B[o + 2]);
       deSum += Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
     }
   }
   const thumb = (img) => { const c = document.createElement('canvas'); const s = thumbWidth / img.width; c.width = thumbWidth; c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); return c.toDataURL('image/webp', 0.72); };
-  return { coverage: changed / n, delta: changed ? deSum / changed : 0, width: W, height: H, thumbOn: thumb(a), thumbOff: thumb(b) };
+  const panelCoverage = Object.fromEntries(panels.map((p) => { const area = Math.max(0, p.x1 - p.x0) * Math.max(0, p.y1 - p.y0); return [p.name, area ? +(p.changed / area).toFixed(4) : null]; }));
+  return { coverage: changed / n, delta: changed ? deSum / changed : 0, width: W, height: H, thumbOn: thumb(a), thumbOff: thumb(b), panelCoverage };
 };
 
 const THUMB_WIDTH = Number(process.env.INSTRUMENT_THUMB_WIDTH ?? 400);
-async function measureVisibility(lab, pngOn, pngOff, thumbWidth = THUMB_WIDTH) {
+async function measureVisibility(lab, pngOn, pngOff, thumbWidth = THUMB_WIDTH, rects = []) {
   const toUrl = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
-  return lab.evaluate(LAB_MEASURE, { on: toUrl(pngOn), off: toUrl(pngOff), thumbWidth });
+  return lab.evaluate(LAB_MEASURE, { on: toUrl(pngOn), off: toUrl(pngOff), thumbWidth, rects });
 }
 
 /* THE CONTROLS. A synthetic page whose GL canvas covers a KNOWN 40% of the viewport must read 0.40 ± 0.01; the same
@@ -631,6 +635,34 @@ async function captureRoute(browser, route, theme, glOff = false) {
       while (performance.now() - t0 < 5000) { await new Promise((r) => setTimeout(r, 150)); const f = fp(); if (f !== last) { last = f; since = performance.now(); } else if (performance.now() - since >= 600) break; }
       return last;
     }).catch(() => null);
+    // THE PANELS (P4): each hero's rect, read just before the ON shot (device px = css px: deviceScaleFactor 1).
+    // THE CHROME FADE'S PROOF (P4): the sidebar and top bar fade their glass in a band the component measured as text-free.
+    // Count the text nodes whose rects intersect a fade band, skipping text that sits on its own solid background (the
+    // search pill). Must be 0 on every route×theme; the bands are reported in px so a reader can check the capture.
+    const chromeFade = await page.evaluate(() => {
+      const out = { bands: [], textHits: 0, hits: [] };
+      const solid = (el) => { for (let e = el; e && e !== document.body; e = e.parentElement) { const bg = getComputedStyle(e).backgroundColor; const m = /rgba?\(([^)]+)\)/.exec(bg); if (m) { const parts = m[1].split(',').map((v) => parseFloat(v)); const a = parts.length > 3 ? parts[3] : 1; if (a >= 0.9) return true; } } return false; };
+      const bands = [];
+      const aside = document.querySelector('aside.chrome-fade-y'); const header = document.querySelector('header.chrome-fade-x');
+      const px = (el, v) => { const s = el.style.getPropertyValue(v).trim(); return s.endsWith('px') ? parseFloat(s) : null; };
+      if (aside) { const r = aside.getBoundingClientRect(), a = px(aside, '--fade-a'), b = px(aside, '--fade-b'); if (a != null && b != null) bands.push({ name: 'sidebar', x0: r.left, y0: r.top + a, x1: r.right, y1: r.top + b }); }
+      if (header) { const r = header.getBoundingClientRect(), a = px(header, '--fade-a'), b = px(header, '--fade-b'); if (a != null && b != null) bands.push({ name: 'topbar', x0: r.left + a, y0: r.top, x1: r.left + b, y1: r.bottom }); }
+      out.bands = bands.map((b) => ({ name: b.name, x0: Math.round(b.x0), y0: Math.round(b.y0), x1: Math.round(b.x1), y1: Math.round(b.y1) }));
+      if (!bands.length) return out;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent || !node.textContent.trim()) continue;
+        const el = node.parentElement; if (!el) continue;
+        const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        const range = document.createRange(); range.selectNodeContents(node); const r = range.getBoundingClientRect(); if (!r.width || !r.height) continue;
+        for (const b of bands) {
+          if (r.left < b.x1 && r.right > b.x0 && r.top < b.y1 && r.bottom > b.y0) { if (solid(el)) continue; out.textHits += 1; if (out.hits.length < 5) out.hits.push({ band: b.name, text: node.textContent.trim().slice(0, 40) }); }
+        }
+      }
+      return out;
+    }).catch(() => null);
+    const heroRects = await page.evaluate(() => [...document.querySelectorAll('[data-hero]')].map((el) => { const r = el.getBoundingClientRect(); return { name: el.getAttribute('data-hero'), x: r.x, y: r.y, w: r.width, h: r.height }; }).filter((r) => r.w > 0 && r.h > 0)).catch(() => []);
     try { png = await page.screenshot({ timeout: 15_000 }); if (!glOff) { writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } } catch { /* a missing shot is reported as such */ }
     // THE PAIR FROM ONE PAGE LOAD (P3): force GL off IN PLACE and shoot again. The stage disposes and blanks; every relief
     // falls back flat; nothing else about the page changes — so the two captures differ only by GL.
@@ -644,7 +676,7 @@ async function captureRoute(browser, route, theme, glOff = false) {
     }
     if (glOff) return { theme, reached, png, glOff: true, domFp, ...quiet };
     // `animations` = at rest (before the navigation); the post-return count travels beside it, never as the finding.
-    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, nav, pageErrors: errs.slice(0, 5), shot, png };
+    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, heroRects, chromeFade, nav, pageErrors: errs.slice(0, 5), shot, png };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }
@@ -673,6 +705,7 @@ async function main() {
   // RUNTIME
   let server = null;
   const runtime = {};
+  let warmup = null;
   if (!STATIC_ONLY) {
     const { chromium } = await import('playwright');
     server = startDevServer();
@@ -681,6 +714,19 @@ async function main() {
     const lab = VISIBILITY ? await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 }) : null;
     if (VISIBILITY) await validateVisibilityMaths(browser);
     try {
+      // THE WARM-UP (P4): the dev server compiles a route's lazy chunks on FIRST request, so the first theme of every route
+      // paid seconds of cold compile and its capture could land on a half-loaded page (the deck's dark run read 2 figures,
+      // its light run 54). Visit every route once, untimed, before anything is measured. Recorded in totals.warmup.
+      {
+        const warm = await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 });
+        await warm.addInitScript(seatInit, SEAT).catch(() => {});
+        await warm.route('**/v1/**', (r) => r.abort('connectionrefused'));
+        const t0 = Date.now(); let n = 0;
+        for (const r of routes) { try { await warm.goto(BASE + r.probe, { waitUntil: 'networkidle', timeout: 30_000 }); n++; } catch { /* a slow route still warmed what it could */ } }
+        await warm.close();
+        warmup = { routes: n, ms: Date.now() - t0 };
+        console.log(`  warm-up: ${n} routes visited in ${((Date.now() - t0) / 1000).toFixed(0)} s (cold chunk compile paid before measuring)`);
+      }
       let i = 0;
       for (const r of routes) {
         i += 1;
@@ -702,12 +748,12 @@ async function main() {
             }
             if (off.png) {
               const domMatch = !on.domFp || !off.domFp ? null : on.domFp === off.domFp;
-              const m = await measureVisibility(lab, on.png, off.png);
+              const m = await measureVisibility(lab, on.png, off.png, THUMB_WIDTH, on.heroRects ?? []);
               const stem = `${r.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
               mkdirSync(join(GALLERY_DIR, 'gallery'), { recursive: true });
               writeFileSync(join(GALLERY_DIR, 'gallery', `${stem}-on.webp`), Buffer.from(m.thumbOn.split(',')[1], 'base64'));
               writeFileSync(join(GALLERY_DIR, 'gallery', `${stem}-off.webp`), Buffer.from(m.thumbOff.split(',')[1], 'base64'));
-              on.visibility = { coverage: Number(m.coverage.toFixed(4)), delta: Number(m.delta.toFixed(2)), domMatch, offRetried, inPlace: !!off.inPlace, offState: on.offState ?? null, thumbOn: `gallery/${stem}-on.webp`, thumbOff: `gallery/${stem}-off.webp` };
+              on.visibility = { coverage: Number(m.coverage.toFixed(4)), delta: Number(m.delta.toFixed(2)), domMatch, offRetried, inPlace: !!off.inPlace, offState: on.offState ?? null, panels: m.panelCoverage ?? {}, thumbOn: `gallery/${stem}-on.webp`, thumbOff: `gallery/${stem}-off.webp` };
               process.stdout.write(`(gl ${(m.coverage * 100).toFixed(0)}%${domMatch === false ? ' †dom' : ''})`);
             }
           }
@@ -727,6 +773,7 @@ async function main() {
   const reached = rt.filter((x) => x.dark?.reached === 'REACHED' && x.light?.reached === 'REACHED').length;
   const themeCorrect = rt.filter((x) => x.dark?.dark === true && x.light?.dark === false).length;
   const totals = {
+    warmup,
     head: HEAD, runAt: RUN_AT, fixtures: FIXTURES, frozenAt: new Date(FROZEN_AT).toISOString(),
     routes: routes.length,
     glRoutes: routes.filter((r) => r.static.gl).length + (shell.gl ? 0 : 0),
@@ -839,7 +886,8 @@ function renderGallery(t, routes, runtime) {
     const rows = routes.map((r) => {
       const v = runtime[r.path]?.[theme]?.visibility;
       if (!v) return `| \`${r.path}\` | _not captured_ | | — | — |`;
-      return `| \`${r.path}\` | ![shipped](${v.thumbOn}) | ![GL off](${v.thumbOff}) | **${pct(v.coverage)}**${v.domMatch === false ? ' †' : ''} | ${v.delta.toFixed(1)} |`;
+      const panels = Object.entries(v.panels ?? {}).map(([k, x]) => ` · ${k} ${x == null ? '—' : pct(x)}`).join('');
+      return `| \`${r.path}\` | ![shipped](${v.thumbOn}) | ![GL off](${v.thumbOff}) | **${pct(v.coverage)}**${v.domMatch === false ? ' †' : ''}${panels} | ${v.delta.toFixed(1)} |`;
     });
     return `### ${theme}\n\n| route | as shipped | GL forced off | GL coverage | mean ΔE76 |\n|---|---|---|---|---|\n${rows.join('\n')}\n`;
   };

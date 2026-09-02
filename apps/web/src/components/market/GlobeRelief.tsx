@@ -161,7 +161,7 @@ export function GlobeRelief({ points, children }: GlobeReliefProps) {
   const showRelief = wantRelief && refusal === null;
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col">
+    <div data-hero="globe" className="flex h-full w-full min-h-0 flex-col">
       {/* THE TOGGLE SITS ABOVE THE VIEW. The scatter fills the pane and brushes on drag; a control below it
           would be a control a reader has to find past a full-height field. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '2px 4px 8px' }}>

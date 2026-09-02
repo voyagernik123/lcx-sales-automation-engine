@@ -17,4 +17,13 @@ export const GLASS = {
 
 /** The class strings, spelled once. Tailwind's `/[.86]` is rgb(var(--card) / 0.86). */
 export const GLASS_CHROME_CLASS = 'bg-card/[.86] dark:bg-card/[.88] backdrop-blur-md';
+/**
+ * THE CHROME AS A LAYER (THE PRODUCTION, P4). The same alphas, painted on a `::before` under the element's content, so a
+ * mask can FADE the glass where the chrome holds no text — the sidebar between its last nav item and its footer, the top
+ * bar between the breadcrumb and the controls — and the room shows through. The element itself carries no background:
+ * text sits over the layer, and the layer is opaque (these alphas) wherever text can sit. The fade bands are MEASURED by
+ * the components (ResizeObserver → `--fade-a/--fade-b` in px) and default to "no fade" until measured; the instrument
+ * scans text rects against the bands per route (`chromeFadeTextHits` must be 0).
+ */
+export const GLASS_CHROME_LAYER_CLASS = 'relative isolate before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-card/[.86] dark:before:bg-card/[.88] before:backdrop-blur-md';
 export const GLASS_PLATE_CLASS = 'bg-page/[.78] dark:bg-page/[.56] backdrop-blur-md';

@@ -28,7 +28,7 @@ import {
   createStage, isStage, box, plane, uploadMesh, createLitRenderer, createTarget3D, createShadowMap,
   createSkyBackdrop, heightfield, contourSegments, viewProjection, eyeOf, lightViewProjection,
   boundsCentre, boundsRadius, hexToLinear, assertBrandFidelity, IDENTITY,
-  TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  createPresenter, loadEnvironmentMap, uploadEnvironment,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint, type Linear,
 } from '@lcx/gl';
@@ -51,22 +51,7 @@ export interface SurfaceReliefGlProps {
   readonly contourLevels?: readonly number[];
 }
 
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+/* The present shaders that used to live here moved into the engine's ONE present path (look/present.ts, P4). */
 
 const SURF_W = 4.6, SURF_D = 3.4, SURF_H = 1.15, PLINTH_H = 0.16;
 
@@ -211,8 +196,18 @@ export default function SurfaceReliefGl({
       onRefused(code);
     };
 
-    const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-    if ('kind' in present) { refuse(present.code); return; }
+    // THE ONE PRESENT PATH (P4): copy → pipeline (bloom, the one tone map, the one encode) → FXAA → canvas.
+    const presenter = createPresenter(stage);
+    if ('kind' in presenter) { refuse(presenter.code); return; }
+    presenter.resize(W, H);
+    disposers.push(() => presenter.dispose());
+    // THE STUDIO ON THE HERO (P4): the rendered environment lights this surface too — diffuse from a soft LOD, reflections by
+    // roughness (env/sky.ts). Loaded once per context; the frame redraws when it lands; a failed fetch leaves the stops.
+    let env: WebGLTexture | null = null;
+    const HERO_ENV_GAIN = { dark: 0.6, light: 1.0 } as const;
+    const withEnv = <S extends object | undefined>(s: S, th: { name: 'dark' | 'light' }) => (env ? { ...(s ?? {}), envMap: env, envGain: HERO_ENV_GAIN[th.name] } : s);
+    // `redrawForTheme` returns early when the theme is unchanged; the map landing IS a change, so the guard is reset first.
+    disposers.push(loadEnvironmentMap(gl, liveTheme(), (t) => { env = t; drawnTheme = null; redrawForTheme(); }, uploadEnvironment));
     const lit = createLitRenderer(stage);
     if ('kind' in lit) { refuse(lit.code); return; }
     disposers.push(() => lit.dispose());
@@ -467,7 +462,7 @@ export default function SurfaceReliefGl({
 
     const renderScene = (th: SceneTheme, draws: readonly LitDraw[]): void => {
       const rig = rigFor(th);
-      const sky = skyFor(th);
+      const sky = withEnv(skyFor(th), th);
       lit.shadowPass(lightVP, draws, shadow);
       target.bind();
       gl.clear(gl.DEPTH_BUFFER_BIT);
@@ -483,12 +478,7 @@ export default function SurfaceReliefGl({
       });
     };
     const presentFrame = (): void => {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.disable(gl.DEPTH_TEST);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      presenter.present(target, { theme: liveTheme() });
     };
 
     /*

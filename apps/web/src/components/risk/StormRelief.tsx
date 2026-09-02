@@ -375,7 +375,7 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
   const blocked = refusal !== null || !drawable;
 
   return (
-    <div>
+    <div data-hero="storm">
       {showStorm ? (
         <Suspense fallback={<RiskCalendar heightPx={heightPx} {...rest} />}>
           {/*

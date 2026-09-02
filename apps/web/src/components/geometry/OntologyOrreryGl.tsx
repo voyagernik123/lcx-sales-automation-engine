@@ -29,7 +29,7 @@ import {
   createStage, isStage, plane, sphere, cylinder, torus, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, viewProjection, lightViewProjection, boundsCentre, boundsRadius, projectScreen,
   hexToLinear, mixLinear, assertBrandFidelity, IDENTITY,
-  TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  createPresenter, loadEnvironmentMap, uploadEnvironment,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Geometry, type Linear,
 } from '@lcx/gl';
@@ -61,22 +61,7 @@ export interface OntologyOrreryGlProps {
 
 /* Comments live ABOVE the shader literals, never inside them: a comment inside a template literal is shipped
    bytes a minifier cannot reach, and a backtick inside one terminates it. That has bitten twelve times here. */
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+/* The present shaders that used to live here moved into the engine's ONE present path (look/present.ts, P4). */
 
 /*
  * COLOUR CARRIES THE DATA STATE, NOT THE ENTITY KIND — a deliberate division, and E4's.
@@ -451,8 +436,18 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       onRefused(code, reason);
     };
 
-    const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-    if ('kind' in present) { refuse(present.code, present.reason); return; }
+    // THE ONE PRESENT PATH (P4): copy → pipeline (bloom, the one tone map, the one encode) → FXAA → canvas.
+    const presenter = createPresenter(stage);
+    if ('kind' in presenter) { refuse(presenter.code, presenter.reason); return; }
+    presenter.resize(W, H);
+    disposers.push(() => presenter.dispose());
+    // THE STUDIO ON THE HERO (P4): the rendered environment lights this surface too — diffuse from a soft LOD, reflections by
+    // roughness (env/sky.ts). Loaded once per context; the frame redraws when it lands; a failed fetch leaves the stops.
+    let env: WebGLTexture | null = null;
+    const HERO_ENV_GAIN = { dark: 0.6, light: 1.0 } as const;
+    const withEnv = <S extends object | undefined>(s: S, th: { name: 'dark' | 'light' }) => (env ? { ...(s ?? {}), envMap: env, envGain: HERO_ENV_GAIN[th.name] } : s);
+    // `redrawForTheme` returns early when the theme is unchanged; the map landing IS a change, so the guard is reset first.
+    disposers.push(loadEnvironmentMap(gl, liveTheme(), (t) => { env = t; drawnTheme = null; redrawForTheme(); }, uploadEnvironment));
     const lit = createLitRenderer(stage);
     if ('kind' in lit) { refuse(lit.code, lit.reason); return; }
     disposers.push(() => lit.dispose());
@@ -516,9 +511,9 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       const rig = rigFor(th);
       /* NO SKY BACKDROP IS DRAWN HERE, so the sky is purely the irradiance environment and has no backdrop to
          stay in step with. `undefined` on dark so that frame takes the path it shipped on. */
-      const sky = th.name === 'dark' ? undefined : {
+      const sky = withEnv(th.name === 'dark' ? undefined : {
         zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
-      };
+      }, th);
       const outcome = buildOrrery({ ...graph, cssWidth: size.w, cssHeight: size.h });
       if (isOrreryRefusal(outcome)) { refuse(outcome.code, outcome.reason); return undefined; }
       const L = outcome;
@@ -754,12 +749,7 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       }
 
       renderScene();
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.disable(gl.DEPTH_TEST);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      presenter.present(target, { theme: liveTheme() });
       /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a STALE_TIER return cannot leave the observer believing a
          theme is on screen that never reached it. */
       drawnTheme = th.name;

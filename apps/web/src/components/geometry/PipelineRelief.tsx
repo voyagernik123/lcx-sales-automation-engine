@@ -111,7 +111,7 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
   })();
 
   return (
-    <div>
+    <div data-hero="pipeline">
       {showRelief ? (
         <div className="px-3 py-2">
           <Suspense fallback={<LeadTable {...table} />}>

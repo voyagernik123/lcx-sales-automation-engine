@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GLASS, GLASS_CHROME_CLASS, GLASS_PLATE_CLASS } from '../glass';
+import { GLASS, GLASS_CHROME_CLASS, GLASS_CHROME_LAYER_CLASS, GLASS_PLATE_CLASS } from '../glass';
 import { STAGE_LUMINANCE_MAX, STAGE_LUMINANCE_MIN } from '@lcx/gl/env/stageScene.js';
 
 /**
@@ -68,10 +68,13 @@ describe('the glass keeps every text floor over the stage', () => {
   it('the components spell the alphas the table declares', () => {
     expect(GLASS_CHROME_CLASS).toContain(`bg-card/[${GLASS.light.chrome.toFixed(2).replace(/^0/, '')}]`);
     expect(GLASS_CHROME_CLASS).toContain(`dark:bg-card/[${GLASS.dark.chrome.toFixed(2).replace(/^0/, '')}]`);
+    // P4: the chrome is painted as a masked LAYER (::before) with the SAME alphas; the fade band holds no text by construction.
+    expect(GLASS_CHROME_LAYER_CLASS).toContain(`before:bg-card/[${GLASS.light.chrome.toFixed(2).replace(/^0/, '')}]`);
+    expect(GLASS_CHROME_LAYER_CLASS).toContain(`dark:before:bg-card/[${GLASS.dark.chrome.toFixed(2).replace(/^0/, '')}]`);
     expect(GLASS_PLATE_CLASS).toContain(`bg-page/[${GLASS.light.plate.toFixed(2).replace(/^0/, '')}]`);
     expect(GLASS_PLATE_CLASS).toContain(`dark:bg-page/[${GLASS.dark.plate.toFixed(2).replace(/^0/, '')}]`);
     for (const f of ['components/layout/TopNav.tsx', 'components/layout/Sidebar.tsx']) {
-      expect(readFileSync(join(SRC, f), 'utf8'), `${f} does not use GLASS_CHROME_CLASS`).toContain('GLASS_CHROME_CLASS');
+      expect(readFileSync(join(SRC, f), 'utf8'), `${f} does not use the glass chrome layer`).toContain('GLASS_CHROME_LAYER_CLASS');
     }
     expect(readFileSync(join(SRC, 'components/layout/MainContent.tsx'), 'utf8')).toContain('GLASS_PLATE_CLASS');
   });

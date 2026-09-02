@@ -85,7 +85,7 @@ import {
   createStage, isStage, box, uploadMesh, createLitRenderer, createTarget3D, createShadowMap,
   createVolumeField, viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, sub, cross, normalise,
-  TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  createPresenter, PRESENT_COPY_VERT,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type MeshBuffer, type Viewpoint, type VolumeField, type Vec3,
 } from '@lcx/gl';
@@ -102,22 +102,9 @@ export interface StormReliefGlProps {
   readonly onRefused: (code: string) => void;
 }
 
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+/* The present shaders that used to live here moved into the engine's ONE present path (look/present.ts, P4). */
+/* The storm's volume pass still needs the fullscreen vertex shader; it is the engine's copy-pass vertex shader, unchanged. */
+const PRESENT_VERT = PRESENT_COPY_VERT;
 
 /*
  * THE VOLUME GOES INTO ITS OWN TARGET AND IS COMPOSITED, AND THAT IS NOT AN OPTIMISATION.
@@ -286,8 +273,11 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
       onRefused(code);
     };
 
-    const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-    if ('kind' in present) { refuse(present.code); return; }
+    // THE ONE PRESENT PATH (P4): copy → pipeline (bloom, the one tone map, the one encode) → FXAA → canvas.
+    const presenter = createPresenter(stage);
+    if ('kind' in presenter) { refuse(presenter.code); return; }
+    presenter.resize(W, H);
+    disposers.push(() => presenter.dispose());
     const composite = stage.compile(PRESENT_VERT, COMPOSITE_FRAG);
     if ('kind' in composite) { refuse(composite.code); return; }
     const lit = createLitRenderer(stage);
@@ -726,12 +716,7 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
            render would produce. A fifth render would only make the probe's cost visible. */
       }
 
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.disable(gl.DEPTH_TEST);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      presenter.present(target, { theme: 'dark' });
       /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
       canvas.dataset.qualityTier = tier;
 

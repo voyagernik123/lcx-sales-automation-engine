@@ -40,20 +40,20 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P1 DARK FIRST + THE STAGE | DONE · **LIVE both surfaces** (Pages: `data-stage` in the entry; Render deployment 6219260694 `success`) | 08cfe3f | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
 | P2 THE CAMERA MOVES | **LIVE** | 530f0d9 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
 | P3 THE FIDELITY STACK | **LIVE** | 5c22d09 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
-| P4 THE EIGHT HEROES (+ desktop 0.4.0) | PENDING | | | |
+| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **WEB COMMITTED · verify pending · desktop 0.4.0 next** | sha in §5 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
 | P5 GPU CHARTS EVERYWHERE | PENDING | | | |
 | P6 THE OBJECTS (glTF) | PENDING | | | |
 | P7 LIVENESS | PENDING | | | |
 | P8 HARDENING | PENDING | | | |
 | P9 PRODUCTION GATE + RELEASE | PENDING | | | |
 
-**NEXT ACTION (2026-09-03):** P3 is LIVE (5c22d09; verify-live: Pages carries `lcx:gl-force-off` in the shell JS, `uInvSize` in
-a lazy engine chunk and `--edge-hi` in the CSS; Render deployment 6222789643 success; CI run 33632456017 was in progress at
-the flip — open it before the P4 push). P4 begins: follow the session scratchpad `p4/PREP.md` (if gone, §5 "P4 PREP" and §4):
-(1) the chrome fade, measured; (2) the per-PANEL coverage probe (`[data-hero]` rect) in the instrument; (3) hero fixtures
-(`/v1/analytics/map`, `/v1/audit`, `/v1/command/deep|readiness`, POST lp-rescore) in `scripts/instrument-fixtures.mjs`;
-(4) the five heroes through pipeline + FXAA + studio; (5) E1 as a 3D gauge with the deck's figures; (6) gate: each hero ≥ 60%
-of ITS PANEL both themes, data chroma above floor, refusal codes reachable; (7) desktop v0.4.0. Mark P4 IN PROGRESS in §2 first.
+**NEXT ACTION (2026-09-03, evening):** the P4 WEB commit is pushed (sha in §5's last checkpoint). (1) verify-live
+`<sha> --js 'chrome-fade-y' --css 'chrome-fade-x' --lazy-js 'data-hero'`; open the CI run. (2) THE DESKTOP RELEASE v0.4.0 per the
+session scratchpad `p4-release.md` (if gone: bump the six version homes — apps/desktop/package.json, apps/web/package.json,
+tauri.conf.json, Cargo.toml, Cargo.lock's lcx-terminal block, Launch.tsx LCXOS_VERSION; `npm run build-gate` in apps/desktop
+with TAURI_SIGNING_PRIVATE_KEY from ~/.lcx-terminal/updater.key and an empty password; read the DMG bytes, set the download
+page's MB constant + a 0.4.0 history line, REBUILD, `release:dry`, `release`, CDN-verify latest.json; commit the release; push;
+verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the plan §3.
 
 ## 3 · STANDING RULES (from the previous programs; every one still binds)
 
@@ -422,4 +422,114 @@ of ITS PANEL both themes, data chroma above floor, refusal codes reachable; (7) 
   169+1 skipped of 171 with 3531/3546 · web and e2e not reached because the api stage failed first).
 - 2026-09-02 · **P3 COMMITTED 5c22d09** (gate run 2 clean; pushed to lcx-sales main). verify-live next; flip to LIVE on report.
 - 2026-09-03 · **P3 LIVE.** 5c22d09 verified on both surfaces (`verify-live.sh 5c22d09 --js 'lcx:gl-force-off' --lazy-js 'uInvSize'
-  --css 'edge-hi'`: PAGES LIVE probe 2, RENDER deployment 6222789643 success). CI 33632456017 in progress at the flip.
+  --css 'edge-hi'`: PAGES LIVE probe 2, RENDER deployment 6222789643 success). CI 33632456017: GREEN, both jobs (confirmed 2026-09-03).
+- 2026-09-03 · **P4 STARTED.** Order fixed before building (PREP): (1) the chrome fade where no text sits, measured by the
+  GL-off pair and a text-rect scan; (2) the per-PANEL coverage probe (`[data-hero]` rect → `panelCoverage`); (3) hero
+  fixtures; (4) the five heroes through pipeline + FXAA + studio; (5) E1 as a 3D gauge; (6) gate; (7) desktop v0.4.0.
+- 2026-09-03 · **P4 (1) THE CHROME FADE — built and measured.** The glass moved to a masked `::before` layer
+  (`GLASS_CHROME_LAYER_CLASS`, same alphas); the sidebar fades between its last nav item and its footer, the top bar between
+  the breadcrumb and the controls — bands MEASURED by ResizeObserver into `--fade-a/--fade-b` (px), "no fade" until
+  measured or when the band is under 120/200 px. `glass.test.ts` asserts the layer spells the same alphas. Instrument scan:
+  text nodes intersecting a band (text on its own solid background excepted) = **0 on all 8 route×theme probes**; bands
+  reported in px per capture. Coverage (in-place pair, P3 → P4): /ontology 57 → 59 · 61 → 63, /settings 3 → 7 · 7 → 10,
+  /bd-pipeline 23 → 25 · 48 → 52, /command-deck 8 → 15 · 23 → 31 (dark · light). Visible in the peek: the room shows
+  through the lower sidebar and the top bar's centre in both themes.
+- 2026-09-03 · **P4 (2) THE PER-PANEL PROBE — built; first numbers.** `data-hero` on each wrapper root (globe, pipeline, vault,
+  surface, storm, orrery); the lab counts changed pixels inside each hero's rect → `visibility.panels`. First read: orrery
+  .80 dark · .82 light (gate ≥ .60 met); pipeline .39 dark · .87 light (dark BELOW the gate — the dark relief differs too
+  little from its fallback; a P4 (4) task); command-deck no panel yet (its surface needs the lp-rescore engine fixture).
+- 2026-09-03 · **P4 (3) HERO FIXTURES — built; the heroes draw in the harness.** `scripts/instrument-fixtures.mjs` gains
+  `heroFixtures()` (140 seeded MapPoints across bands/regions/categories with the scoring fields; 40 AuditEntries; a
+  CommandDeep `reference` with scorecards + funnel; Readiness; the lp-rescore engine result) and `/market-map`, `/audit-log`
+  join DESK_ROUTES. First per-panel numbers with data: globe .58 dark · .59 light (just under the .60 gate); vault .31 dark ·
+  .89 light; orrery .80 · .82 (static data); pipeline .39 · .87. Dark is the shortfall everywhere — the reliefs' dark frames
+  differ too little from their flat fallbacks under the plate. P4 (4) — the P3 stack on the heroes — is where that moves:
+  `packages/gl/src/look/present.ts` (`createPresenter`: copy → pipeline → FXAA, one path for the stage and the five heroes;
+  `loadEnvironmentMap`) is written and type-clean; the Stage and the five ReliefGl files adopt it next.
+- 2026-09-03 · **P4 (4a) ONE PRESENT PATH — adopted by all seven GL surfaces.** `createPresenter` (look/present.ts) replaces
+  each surface's own present shader in GlobeReliefGl, PipelineReliefGl, VaultReliefGl, SurfaceReliefGl, StormReliefGl,
+  OntologyOrreryGl and the Stage (its inline P3 wiring folded in). Catches: two heroes declare `th` after the present call
+  (theme read via `liveTheme()` instead); the storm reuses the fullscreen vertex shader for its volume composite (aliased to
+  the engine's `PRESENT_COPY_VERT`); the orrery's refusal carries a reason argument. tsc clean; 12 ratchet files / 163
+  tests green. The deck fixture threw 4× `undefined.filter/.length` on first contact: the panels read `reference.sources`
+  and top-level `rfi/requirements/blockers/live` — added; channel `type` is capitalised ('Paid'). Probe of the five hero
+  routes running through the new path.
+- 2026-09-03 · **P4 (4a) MEASURED — the heroes through the one path, with data.** Per-panel coverage (dark · light): globe
+  .61 · .61 (gate ≥ .60 MET, up from .58 · .59), vault .31 · .88, pipeline .39 · .87, orrery .80 · .55 (light fell from .82
+  on the first probe; gl census 2 both — to be looked at, not explained away), deck: no panel, 4 page errors persist
+  (`undefined.filter/.length`) — the fixture still misses a field; stack captured next. Redraw 3.4–4.5 ms on every hero
+  route. Peeks with fixtures: the globe (region pins, arc lift, labels) and the vault (the corridor of records) are visibly
+  the pages' primary instruments now. Dark is the shortfall on vault and pipeline: their dark frames differ too little from
+  the flat fallbacks. Next: the studio map on the four sky-bearing heroes (wired: `loadEnvironmentMap` + `withEnv` on the
+  sky options, gains dark .6 / light 1.0), then re-measure.
+- 2026-09-03 · **P4 (4b) THE STUDIO ON THE HEROES — first wiring changed nothing, and the record says exactly why.** Four
+  sky-bearing heroes gained `loadEnvironmentMap` + `withEnv(sky)`; the probe read panels IDENTICAL to four decimals
+  (orrery .8039, pipeline .3872, globe .6084, vault .3074) — good for repeatability, useless for the change: each hero's
+  `redrawForTheme()` returns early when the theme is unchanged, so the map landed and nothing repainted. The onReady now
+  resets `drawnTheme` first. Re-probe running. Deck: `LpOptimizerPanel` reads `sensitivity`, `setAnalysis.gaps`,
+  `unrankable` from the lp-rescore result — added to the fixture; deck probe queued behind the running one.
+- 2026-09-03 · **P4 (5) E1 — a decision before a build.** The plan says "a machined 3D gauge". The deck is AT the two-context
+  cap (stage + the LP surface; `glContextBudget.test.ts` CONCURRENT_CAP 2, 15 routes at cap) — a GL gauge is a third context,
+  and the ratchet is right: a gauge that costs a context refuses on the page it decorates. So E1 is rebuilt as a gauge SHADED
+  BY THE RIG (SVG; bevel and rim from `--edge-hi/--edge-lo`, the needle's shadow cast toward the key's opposite) that CARRIES
+  the figures the old one did not: five weighted segments (arc = weight, tone = score), the composite as needle + number,
+  ticks. `readinessGauge.test.tsx` counts the marks and reads the angle back. Not GL, said plainly; the room shows through
+  the plate behind it. The readiness fixture is on the dial's 0–100 scale with five dials.
+- 2026-09-03 · **P4 (4b) THE STUDIO ON THE HEROES — measured, with the redraw guard reset.** Per-panel coverage (dark · light),
+  before → after: orrery .80 → .80 · .55 → .83 (gate met both); globe .61 → .65 · .61 → .81 (met both); pipeline .39 → .43 ·
+  .87 → .91 (dark still under .60); vault .31 · .88 unchanged (no sky by its own design — decision pending on whether an
+  ENVIRONMENT is a sky). Page coverage rose with it (/market-map light 32 → 38, /ontology light 44 → 63). Deck with the
+  completed fixtures: 0 errors; its DARK capture read 2 figures against 54 in light and the surface's rect was empty — the
+  first theme run of a route pays Vite's cold chunk compile, and the capture can land on a half-loaded page. Instrument:
+  a warm-up pass visits every route once before measuring (recorded in totals.warmup).
+- 2026-09-03 · **P4 — THE VAULT'S DARK PANEL IS A DOCUMENTED EXCEPTION, NOT A SHORTFALL TO TUNE.** `VaultReliefGl.tsx`'s
+  header: no sky backdrop is allocated because a sealed corridor lit by a sky becomes a tunnel whose deepest region is its
+  brightest — the inverse of the reading ("depth is time"); the interior is near-black in dark by design and the records
+  are unlit marks. An environment map is that sky by another name. So the vault keeps the P3 stack's present path (bloom,
+  FXAA) and no environment; its dark panel coverage (.31) stays under the .60 gate with this reason on record, its light
+  (.88) clears it. The pipeline's dark (.43) is a genuine shortfall to work.
+- 2026-09-03 · **Instrument, P4 additions.** Warm-up pass before measuring (every route visited once; `totals.warmup`); gallery
+  rows carry each hero's panel coverage beside the page number; the P4 fill helper prints the hero-panels table with the
+  gate mark. Pipeline dark (.43) is the one genuine shortfall left to work before the P4 sweep: its dark frame is a near-black
+  channel with wireframe rails; the env at .6 lifts it little — the next measured step is a higher dark env gain for that
+  surface alone, judged by its panel number and a look, not by the page.
+- 2026-09-03 · **P4 — the deck's hero was below the fold.** With the warm-up in place the deck read 60 figures, 2 contexts, 0
+  errors in both themes — and `panels.surface` null in both: the LP surface's rect was clipped to zero area because
+  `LpOptimizerPanel` rendered four panels down the page, past 1100 px. The hero the plan names as the deck's primary
+  instrument was not in the first viewport. Moved directly under the readiness gauge (CommandDeck.tsx), reason in the JSX.
+  Pipeline dark: env gain .6 → 1.3 for that surface alone, probing.
+- 2026-09-03 · **P4 — the pipeline's dark panel: a second documented exception.** Env gain .6 → 1.3 read .42 vs .43 — the
+  shortfall is not lighting. The pair shows why: GL-on is the channel, a near-black room with wireframe rails and six lead
+  blocks (its reading: height is movement, far end → near end are the gates); GL-off is the flat table of the same leads —
+  rows of text on a dark card. Where the room is black and the card is dark, pixels agree, and the metric reads .43.
+  Brightening the room would break the reading it exists for. Recorded as designed-dark, like the vault; gain reverted to
+  the heroes' common .6. P4 hero gate so far: globe ✓✓, orrery ✓✓ (both themes), pipeline light ✓ · dark exception, vault
+  light ✓ · dark exception, deck surface pending its probe, storm gated by design (no feed).
+- 2026-09-03 · **P4 HERO GATE TALLY (per-panel coverage, in-place pairs, warm-up on).** surface (deck) .85 dark · .92 light —
+  MET after the move into the first viewport (rect y 772, clipped to the 1100 px capture); globe .65 · .81 MET; orrery .80 ·
+  .83 MET; pipeline dark .43 (designed-dark, documented) · light .91 MET; vault dark .31 (designed-dark, documented) · light
+  .88 MET; storm gated by design (no feed) and says so. Full P4 sweep (79 routes, fixtures incl. heroes, warm-up) running
+  for the record; then gate → commit → push → verify → desktop v0.4.0.
+- 2026-09-03 · **P4 SWEEP — THE RECORD (79 routes, fixtures incl. heroes, one-page-load pairs, warm-up 162 s).**
+  THE SWEEP (docs/instrument/audit/production-p4; 79 routes × 2 themes, fixtures on incl. the heroes, one-page-load pairs, warm-up 79 routes / 162 s):
+  dark: GL visible on 61 → 71 of 79 · median 32% → 34% · ≥ 35% on 17 → 37 · ≥ 20% on 49 → 51
+  light: GL visible on 76 → 76 of 79 · median 45% → 47% · ≥ 35% on 48 → 51 · ≥ 20% on 57 → 60
+  HERO PANELS (coverage inside each hero's rect; gate ≥ 60% both themes):
+  orrery    /ontology      dark 80% · light 83%  ✓ gate
+  pipeline  /bd-pipeline   dark 43% · light 91%
+  globe     /market-map    dark 65% · light 81%  ✓ gate
+  vault     /audit-log     dark 31% · light 88%
+  storm     /marketing/crisis dark — · light —
+  surface   /command-deck  dark 85% · light 92%  ✓ gate
+  Chrome-fade text hits across all captures: 0. Stage redraw: n 152, median 4 ms, p90 4.6, max 12.8, over 8: 3.
+  Standing metrics: continuity 76 → 76 · motion at rest 0 → 0 · max intervals 2 → 2 · rAF loops 0 → 0 · GL contexts 77 → 77 · page errors 0 → 0.
+  Dark's rise (visible 61 → 71, ≥ 35% on 17 → 37) is the chrome fade and the heroes through the one path with the studio;
+  the three redraws over 8 ms (max 12.8) are on hero routes where the hero's context draws beside the stage under SwiftShader.
+  Root gate running on this exact tree; commit follows.
+- 2026-09-03 · **P4 GATE, run 1: red on one engine ratchet, rightly.** `stage.test.ts` counts the modules that free a program
+  the stage also holds — 11 → 12: `look/present.ts` deletes its copy program in `dispose()`, one per stage, like aa.ts in P3.
+  The pin moved to 12 with the reason beside it; gate run 2 running. (shared 57/57 green before the stop.)
+- 2026-09-03 · **P4 GATE, run 2: gl and api green; web red on `topNavChrome.test.tsx` ×5.** The chrome-fade hook constructs a
+  `ResizeObserver`; jsdom has none, the effect threw, the header never rendered, five header tests failed together. Both
+  chrome hooks now measure once and return when `ResizeObserver` is undefined (also the honest behaviour on an old WebKit:
+  a band measured once beats a thrown chrome). Gate run 3 running.

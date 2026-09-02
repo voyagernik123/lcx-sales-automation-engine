@@ -639,7 +639,7 @@ describe('the source pair is a SUFFICIENT key, and that is derived rather than a
       + 'program-cache work has landed and this cache can now keep everything — re-run '
       + '`node docs/3d/blit-cost.mjs --headless --gpu` arm H and update the figures in stage.ts. '
       + `UP means a new module opted out of the cache without saying so. Current set: ${owners.join(', ')}`,
-    ).toBe(11); // 11 since P3: look/aa.ts frees its FXAA program in dispose(), one per stage, like the other ten
+    ).toBe(12); // 11 since P3 (look/aa.ts frees its FXAA program); 12 since P4 (look/present.ts frees its copy program) — one per stage each, like the other ten
   });
 
   it('nothing but compile() creates a program, links one, or sets pre-link state', () => {

@@ -107,7 +107,7 @@ export function VaultRelief({ entries, children, heightPx = 460 }: VaultReliefPr
   const showRelief = wantRelief && refusal === null;
 
   return (
-    <div>
+    <div data-hero="vault">
       {/* THE TOGGLE SITS ABOVE THE VIEW, not below it: the table lives in a scrolling pane, and a button that
           scrolls away with the rows is a button a reader has to hunt for. */}
       <div style={{

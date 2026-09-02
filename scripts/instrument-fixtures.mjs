@@ -22,6 +22,8 @@
  */
 
 export const DESK_ROUTES = new Set([
+  // THE HEROES (THE PRODUCTION, P4): routes whose primary instrument needs data the harness otherwise aborts.
+  '/market-map', '/audit-log',
   '/command-deck', '/bd-pipeline', '/command', '/regulatory-dashboard',
   '/distribution', '/marketing', '/gps', '/wbr',
 ]);
@@ -239,6 +241,81 @@ export function deskFixtures(frozenAtIso) {
 }
 
 /** Every fixture pair, flat — the instrument registers all of them on a desk route (unmatched paths stay aborted). */
+/**
+ * THE HERO FIXTURES (THE PRODUCTION, P4). The five heroes are data-driven: without these the globe, the vault and the
+ * deck's surface draw nothing in the harness and the judge sees a page that says "no connection". Shapes are read from
+ * apps/web/src/lib/api/{bd,audit,command}.ts (MapPoint, AuditEntry, Readiness, CommandDeep.reference, LpRescoreResult);
+ * values are deterministic (seeded) so two runs draw the same frame. Bands come from MarketMap.tsx BAND_ORDER; regions
+ * from its filter options ('eu' | 'us').
+ */
+export function heroFixtures(frozenAtIso) {
+  const at = Date.parse(frozenAtIso);
+  const iso = (msAgo) => new Date(at - msAgo).toISOString();
+  let seed = 20260903;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const bands = ['immediate', 'high', 'nurture', 'watch', 'archive'];
+  const cats = ['L1', 'DeFi', 'Payments', 'Infra', 'RWA', 'Gaming', 'Stablecoin', 'Oracle'];
+  const points = Array.from({ length: 140 }, (_, i) => {
+    const cap = Math.round(Math.exp(11 + rnd() * 12));               // 60 k … 6 bn USD, log-spread
+    return {
+      id: `fx-map-${i}`, name: `Token ${i.toString(36).toUpperCase()}`, ticker: `T${(i % 97).toString(36).toUpperCase()}${i % 10}`,
+      marketCapUsd: cap, volume24hUsd: Math.round(cap * (0.002 + rnd() * 0.12)), priceChange30d: +((rnd() - 0.5) * 90).toFixed(1),
+      category: cats[i % cats.length], region: i % 3 === 0 ? 'us' : 'eu', listedOnLcx: i % 7 === 0, exchangeCount: Math.floor(rnd() * 12),
+      band: bands[Math.min(4, Math.floor(rnd() * rnd() * 5))],
+      // the scoring fields the lenses and size modes read (bd.ts MapPoint, after `band`)
+      priorityScore: Math.round(rnd() * 100), propensityScore: +rnd().toFixed(3),
+      euScore: i % 5 === 0 ? null : Math.round(rnd() * 100), usPreScore: i % 6 === 0 ? null : Math.round(rnd() * 100), usPostScore: i % 7 === 0 ? null : Math.round(rnd() * 100),
+      recommendedMarket: i % 3 === 0 ? 'us' : i % 3 === 1 ? 'eu' : null,
+    };
+  });
+  const actors = ['nik@lcx.com', 'system', 'monty@lcx.com', 'scheduler'];
+  const actions = ['project.approve', 'project.score', 'campaign.gate', 'draft.save', 'access.grant', 'handoff.create', 'export.pdf', 'login'];
+  const entries = Array.from({ length: 40 }, (_, i) => ({
+    id: `fx-audit-${i}`, actor: actors[i % actors.length], action: actions[(i * 3) % actions.length], entity: i % 4 === 0 ? null : 'project',
+    entityId: i % 4 === 0 ? null : `p${100 + i}`, meta: { source: 'fixture', n: i }, projectName: i % 4 === 0 ? null : `Project ${i}`,
+    createdAt: iso(i * 3_600_000 + 90_000),
+  }));
+  const dims = [['liquidity', 'Liquidity depth', 0.3], ['spread', 'Quoted spread', 0.2], ['uptime', 'Uptime', 0.15], ['coverage', 'Pair coverage', 0.2], ['fees', 'Fee terms', 0.15]]
+    .map(([key, label, weight]) => ({ key, label, weight }));
+  const rows = Array.from({ length: 9 }, (_, i) => {
+    const scores = Object.fromEntries(dims.map((d) => [d.key, +(2 + rnd() * 3).toFixed(2)]));
+    const weighted = +dims.reduce((acc, d) => acc + scores[d.key] * d.weight, 0).toFixed(3);
+    return { subjectId: `mm-${i}`, subjectLabel: ['ALPHA MM', 'BETA LIQ', 'GAMMA QUANT', 'DELTA DESK', 'EPSILON', 'ZETA TRADING', 'ETA CAPITAL', 'THETA', 'IOTA'][i], meta: null, scores, weighted, rank: 0, tier: null };
+  }).sort((a, b) => b.weighted - a.weighted).map((r, i) => ({ ...r, rank: i + 1, tier: i < 3 ? 'A' : i < 6 ? 'B' : 'C' }));
+  const scorecard = { dimensions: dims, rows };
+  const funnel = {
+    channels: [['paid-search', 'Paid search', 'Paid', 120000, 41, 2900], ['referral', 'Referral', 'Organic', 30000, 12, 2500], ['partners', 'Partner co-marketing', 'Partner', 60000, 28, 2100], ['community', 'Community', 'Organic', 15000, 8, 1900]]
+      .map(([channelId, label, type, budget, cac, signupsEst]) => ({ channelId, label, type, budget, cac, signupsEst })),
+    conversions: { waitlistToVerified: 0.42, verifiedToFunded: 0.31 },
+    scenarios: [{ name: 'Base', budget: 225000, waitlist: 9400, funded: 1220 }, { name: 'Lean', budget: 120000, waitlist: 5100, funded: 660 }],
+  };
+  const deep = {
+    reference: {
+      defaultGrade: 'B', scorecards: { lp: scorecard, channel: scorecard, arch: scorecard, twoPath: scorecard }, capabilityDetail: [], connectivity: [],
+      rfi: { fields: [{ key: 'venue', label: 'Venue' }], example: { provider: 'ALPHA MM', values: {} } }, railProviders: [], stablecoinPolicy: [], licensingChecklist: [],
+      funnel, referralMechanics: [], guardrails: [], ninetyDayPlan: [], tooling: [], ddDimensions: [], listingPolicyOutline: [], budgetLines: [], dependencyEdges: [], execDashboard: [], masterRoadmap: [],
+      consolidatedRisks: [], decisionEnrichment: [],
+      sources: [{ id: 'src-1', phase: 'P1', label: 'Launch plan v3', url: null }, { id: 'src-2', phase: 'P2', label: 'Rail RFI responses', url: null }],
+    },
+    // the top-level halves the deck's panels read beside `reference` (CommandDeep, command.ts:175-178)
+    rfi: [], requirements: [], blockers: [], live: { requirements: false, blockers: false },
+  };
+  // 0–100, as the dial reads it (CockpitPanels ReadinessDial: `r.score / 100`); five dials like the product's composite
+  const readiness = { score: 62, dials: [['liquidity', 'Liquidity', 71, 0.3], ['compliance', 'Compliance', 55, 0.25], ['rails', 'Rails', 48, 0.15], ['distribution', 'Distribution', 74, 0.15], ['team', 'Team', 66, 0.15]].map(([key, label, score, weight]) => ({ key, label, score, weight })) };
+  return [
+    ['**/v1/analytics/map*', () => envelope(points, { total: points.length, timestamp: iso(0), version: 'fixture' })],
+    ['**/v1/audit*', () => ({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ data: entries, meta: { total: entries.length, page: 1, limit: 50, totalPages: 1 } }) })],
+    ['**/v1/command/deep*', () => envelope(deep)],
+    ['**/v1/command/readiness*', () => envelope(readiness)],
+    ['**/v1/command/engines/lp-rescore*', () => envelope({
+      dimensions: dims, rows, unrankable: [],
+      // the optimizer panel reads all three (CockpitPanels LpOptimizerPanel; LpRescoreResult in lib/api/command.ts:194)
+      sensitivity: dims.map((d, i) => ({ dimKey: d.key, dimLabel: d.label, currentWeight: d.weight, flipWeight: i === 0 ? 0.41 : i === 3 ? 0.27 : null, gapPerHundredth: +(0.004 + i * 0.0015).toFixed(4) })),
+      setAnalysis: { strengths: dims.slice(0, 3).map((d) => ({ dimKey: d.key, dimLabel: d.label, best: 4.6, coveredBy: rows[0].subjectLabel })), gaps: [] },
+    })],
+  ];
+}
+
 export function allDeskFixtures(frozenAtIso) {
-  return Object.values(deskFixtures(frozenAtIso)).flat();
+  return [...Object.values(deskFixtures(frozenAtIso)).flat(), ...heroFixtures(frozenAtIso)];
 }

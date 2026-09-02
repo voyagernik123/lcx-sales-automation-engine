@@ -37,8 +37,7 @@ type Mod = {
   createStage: typeof import('@lcx/gl/stage.js')['createStage'];
   isStage: typeof import('@lcx/gl/stage.js')['isStage'];
   hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
-  createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
-  createAntialias: typeof import('@lcx/gl/look/aa.js')['createAntialias'];
+  createPresenter: typeof import('@lcx/gl/look/present.js')['createPresenter'];
   uploadEnvironment: typeof import('@lcx/gl/env/sky.js')['uploadEnvironment'];
   qualitySettings: typeof import('@lcx/gl/env/quality.js')['qualitySettings'];
   shadowMapSizeFor: typeof import('@lcx/gl/env/quality.js')['shadowMapSizeFor'];
@@ -91,16 +90,16 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
     let alive = true;
     let dispose: (() => void) | null = null;
     void Promise.all([
-      import('@lcx/gl/stage.js'), import('@lcx/gl/look/colour.js'), import('@lcx/gl/look/pipeline.js'), import('@lcx/gl/look/aa.js'),
+      import('@lcx/gl/stage.js'), import('@lcx/gl/look/colour.js'), import('@lcx/gl/look/present.js'),
       import('@lcx/gl/env/quality.js'), import('@lcx/gl/env/mesh.js'), import('@lcx/gl/env/lit.js'),
       import('@lcx/gl/env/target3d.js'), import('@lcx/gl/env/sky.js'), import('@lcx/gl/primitives/points.js'),
       import('@lcx/gl/env/camera.js'), import('@lcx/gl/look/theme.js'), import('@lcx/gl/env/stageScene.js'),
       import('@lcx/gl/math.js'), import('@lcx/gl/motion/index.js'),
-    ]).then(([stg, col, pipe, aaMod, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo]) => {
+    ]).then(([stg, col, pres, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo]) => {
       if (!alive) return;
       start({
         createStage: stg.createStage, isStage: stg.isStage, hexToLinear: col.hexToLinear,
-        createPipeline: pipe.createPipeline, createAntialias: aaMod.createAntialias, uploadEnvironment: sky.uploadEnvironment,
+        createPresenter: pres.createPresenter, uploadEnvironment: sky.uploadEnvironment,
         qualitySettings: q.qualitySettings, shadowMapSizeFor: q.shadowMapSizeFor,
         plane: mesh.plane, createLitRenderer: lit.createLitRenderer, uploadMesh: lit.uploadMesh,
         createTarget3D: t3d.createTarget3D, createShadowMap: t3d.createShadowMap, createSkyBackdrop: sky.createSkyBackdrop,
@@ -121,23 +120,13 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       const outcome = g.createStage(canvas, { alpha: false });
       if (!g.isStage(outcome)) { setState(`refused:${outcome.code}`); return; }
       const stage = outcome; const gl = stage.gl;
-      // The lit pass needs a depth buffer (Target3D); the pipeline reads `stage.scene`. One copy joins them, in linear
-      // HDR — no tone map here: the composite is the ONE place a frame is tone-mapped and encoded (PIPELINE_SOURCES).
-      const copy = stage.compile(`#version 300 es
-precision highp float; out vec2 vUv;
-void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`,
-        `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uScene; out vec4 frag;
-void main(){ frag = vec4(texture(uScene, vUv).rgb, 1.0); }`);
-      const pipeline = g.createPipeline(stage);
-      const aa = g.createAntialias(stage);
+      // THE ONE PRESENT PATH (P4; P3 wired it inline here first): copy → pipeline → FXAA → canvas, shared with the heroes.
+      const presenter = g.createPresenter(stage);
       const lit = g.createLitRenderer(stage);
       const skyB = g.createSkyBackdrop(stage);
       const shadow = g.createShadowMap(stage, g.shadowMapSizeFor(tier, SHADOW_BASELINE));
       const bail = (reason: string) => { setState(`refused:${reason}`); stage.dispose(); };
-      if ('kind' in copy) return bail(copy.code);
-      if ('kind' in pipeline) return bail(pipeline.code);
-      if ('kind' in aa) return bail(aa.code);
+      if ('kind' in presenter) return bail(presenter.code);
       if ('kind' in lit) return bail(lit.code);
       if ('kind' in skyB) return bail(skyB.code);
       if ('kind' in shadow) return bail(shadow.code);
@@ -165,7 +154,6 @@ void main(){ frag = vec4(texture(uScene, vUv).rgb, 1.0); }`);
         return { x: r.left - hr.left, y: r.top - hr.top, w: r.width, h: r.height };
       };
 
-      let ldr: Target3D | null = null;                     // the composite, encoded, for the anti-alias pass
       let env: WebGLTexture | null = null, envFor = '', envReq = 0;
       const loadEnvironment = (dark: boolean) => {
         const name = dark ? 'dark' : 'light';
@@ -190,18 +178,16 @@ void main(){ frag = vec4(texture(uScene, vUv).rgb, 1.0); }`);
         const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
         if (w === W && h === H && target) return;
         W = w; H = h; canvas.width = W; canvas.height = H;
-        stage.setRegion(W, H);
-        target?.dispose(); ldr?.dispose();
+        presenter.resize(W, H);
+        target?.dispose();
         const t = g.createTarget3D(stage, W, H);
         target = 'kind' in t ? null : t;
-        const l = g.createTarget3D(stage, W, H);
-        ldr = 'kind' in l ? null : l;
       };
 
       const draw = () => {
         if (!alive) return;
         size();
-        if (!target || !ldr) return;
+        if (!target) return;
         const dark = document.documentElement.classList.contains('dark');
         loadEnvironment(dark);
         const theme = g.sceneTheme(dark ? 'dark' : 'light');
@@ -280,20 +266,7 @@ void main(){ frag = vec4(texture(uScene, vUv).rgb, 1.0); }`);
           glows.draw(vp, { size: L.glowSize, lo: g.hexToLinear(dark ? '#1A3FCC' : '#1F4FCC'), hi: g.hexToLinear(dark ? '#2C6BFF' : '#2C6BFF'), gain: L.glowGain, floorY: -1 });
           gl.depthMask(true); gl.disable(gl.BLEND);
         }
-        gl.disable(gl.DEPTH_TEST);
-        stage.bindTarget(stage.scene);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, target.texture);
-        stage.blit(copy, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
-        // Bloom only over what is brighter than the room: the glows in dark, the softboxes' reflections in light. The
-        // plate is black because the scene already fills the frame (the composite ADDS the plate; §5 P3 spec).
-        pipeline.resolve({
-          threshold: dark ? [0.55, 1.3] : [1.05, 2.1], bloomGain: dark ? 0.36 : 0.22, blurSteps: [1, 2, 2],
-          plate: [0, 0, 0], vignetteDepth: 0, into: ldr,
-        });
-        stage.bindTarget(null);
-        gl.viewport(0, 0, W, H);
-        aa.apply(ldr.texture, W, H);
+        presenter.present(target, { theme: dark ? 'dark' : 'light' });
         gl.enable(gl.DEPTH_TEST);
         setState('drawn');
       };
@@ -336,7 +309,7 @@ void main(){ frag = vec4(texture(uScene, vUv).rgb, 1.0); }`);
       const mo = new MutationObserver(invalidate);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
       invalidate();
-      dispose = () => { delete (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW; delete (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY; ro.disconnect(); mo.disconnect(); offFrame?.(); envReq++; if (env) gl.deleteTexture(env); glows?.dispose(); slab?.dispose(); target?.dispose(); ldr?.dispose(); aa.dispose(); pipeline.dispose(); stage.dispose(); };
+      dispose = () => { delete (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW; delete (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY; ro.disconnect(); mo.disconnect(); offFrame?.(); envReq++; if (env) gl.deleteTexture(env); glows?.dispose(); slab?.dispose(); target?.dispose(); presenter.dispose(); stage.dispose(); };
       // THE INSTRUMENT'S IN-PLACE GL-OFF (P3): same page, second capture without GL. Dispose, blank the drawing buffer so
       // the page ground shows through, and name the state — the same refusal code a fresh createStage gives under
       // `__LCX_GL_OFF`. Nothing in the product dispatches this event.

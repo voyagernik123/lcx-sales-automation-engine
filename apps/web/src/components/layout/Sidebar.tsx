@@ -1,5 +1,5 @@
-import { GLASS_CHROME_CLASS } from '@/lib/glass';
-import { useState } from 'react';
+import { GLASS_CHROME_LAYER_CLASS } from '@/lib/glass';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound, Rocket, Megaphone, Compass, Keyboard, Globe } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
@@ -282,9 +282,35 @@ export function Sidebar() {
     );
   };
 
+  // THE CHROME FADE (P4): the glass fades between the last nav item and the footer — a band that holds no text — so the
+  // room shows through the sidebar. Measured, not guessed: a ResizeObserver on the aside and the nav writes the band in px;
+  // a band under 120 px is not worth fading and reads as "no fade" (both vars 100%).
+  const asideRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const aside = asideRef.current, nav = navRef.current;
+    if (!aside || !nav) return;
+    const measure = () => {
+      const top = aside.getBoundingClientRect().top;
+      const last = nav.lastElementChild?.getBoundingClientRect();
+      const footer = nav.nextElementSibling?.getBoundingClientRect();
+      const a = last ? last.bottom - top + 12 : Infinity;
+      const b = footer ? footer.top - top - 12 : aside.clientHeight;
+      const ok = Number.isFinite(a) && b - a >= 120;
+      aside.style.setProperty('--fade-a', ok ? `${Math.round(a)}px` : '100%');
+      aside.style.setProperty('--fade-b', ok ? `${Math.round(b)}px` : '100%');
+    };
+    measure();
+    // No ResizeObserver (jsdom, old WebKit): measure once and leave the band as measured; never throw inside the chrome.
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(aside); ro.observe(nav);
+    return () => ro.disconnect();
+  });
+
   return (
-    <aside className={clsx('flex flex-col overflow-y-auto border-r border-line t-panel', GLASS_CHROME_CLASS, sidebarCollapsed ? 'w-14' : 'w-56')}>
-      <nav className="flex-1 p-2">
+    <aside ref={asideRef} className={clsx('chrome-fade-y flex flex-col overflow-y-auto border-r border-line t-panel', GLASS_CHROME_LAYER_CLASS, sidebarCollapsed ? 'w-14' : 'w-56')}>
+      <nav ref={navRef} className="flex-1 p-2">
         {sections.map(section => {
           const isOpen = openSections[section.title] ?? true;
           return (

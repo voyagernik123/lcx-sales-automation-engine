@@ -41,7 +41,7 @@ import {
   createLitRenderer, createTarget3D, createShadowMap, createAmbientOcclusion, createLineBatch,
   viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, mixLinear, assertBrandFidelity, IDENTITY, statusAlbedo,
-  TONE_MAP_GLSL, SRGB_ENCODE_GLSL, skyIrradiance, inverseToneMap,
+  createPresenter, loadEnvironmentMap, uploadEnvironment, skyIrradiance, inverseToneMap,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type MeshBuffer, type Viewpoint, type Linear,
 } from '@lcx/gl';
@@ -75,22 +75,7 @@ export interface PipelineReliefGlProps {
 
 /* Shader comments live ABOVE the literal. A backtick inside a template literal terminates it — that has bitten
    this repo twelve times — and a comment inside the string is shipped bytes a minifier cannot reach. */
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+/* The present shaders that used to live here moved into the engine's ONE present path (look/present.ts, P4). */
 
 /* ── THE CALIBRATION, carried over from the harness where every number is fixed by a reading requirement ── */
 
@@ -630,8 +615,20 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       onRefused(code);
     };
 
-    const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-    if ('kind' in present) { refuse(present.code); return; }
+    // THE ONE PRESENT PATH (P4): copy → pipeline (bloom, the one tone map, the one encode) → FXAA → canvas.
+    const presenter = createPresenter(stage);
+    if ('kind' in presenter) { refuse(presenter.code); return; }
+    presenter.resize(W, H);
+    disposers.push(() => presenter.dispose());
+    // THE STUDIO ON THE HERO (P4): the rendered environment lights this surface too — diffuse from a soft LOD, reflections by
+    // roughness (env/sky.ts). Loaded once per context; the frame redraws when it lands; a failed fetch leaves the stops.
+    let env: WebGLTexture | null = null;
+    // Measured 2026-09-03: a dark env gain of 1.3 read the same panel coverage as .6 (.42 vs .43) — the channel's dark
+    // shortfall is not lighting, so the gain stays at the heroes' common value.
+    const HERO_ENV_GAIN = { dark: 0.6, light: 1.0 } as const;
+    const withEnv = <S extends object | undefined>(s: S, th: { name: 'dark' | 'light' }) => (env ? { ...(s ?? {}), envMap: env, envGain: HERO_ENV_GAIN[th.name] } : s);
+    // `redrawForTheme` returns early when the theme is unchanged; the map landing IS a change, so the guard is reset first.
+    disposers.push(loadEnvironmentMap(gl, liveTheme(), (t) => { env = t; drawnTheme = null; redrawForTheme(); }, uploadEnvironment));
     const lit = createLitRenderer(stage);
     if ('kind' in lit) { refuse(lit.code); return; }
     disposers.push(() => lit.dispose());
@@ -914,9 +911,9 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       /* THE SKY IS AN IRRADIANCE ENVIRONMENT HERE AND NOTHING ELSE — it is never drawn — so it takes the theme's
          stops without any backdrop to keep in step. `undefined` on dark so the dark frame goes down the same path
          it shipped on rather than one that recomputes the same numbers. */
-      const sky = th.name === 'dark' ? undefined : {
+      const sky = withEnv(th.name === 'dark' ? undefined : {
         zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
-      };
+      }, th);
       /* EVERY ARGUMENT BUT THE DRAW LIST AND THE FOG DENSITY IS SHARED BY CONSTRUCTION, spread into both
          calls from one object rather than written twice. Two hand-maintained copies of a fourteen-field
          lighting call is how a mark pass ends up lit differently from the scenery it is measured against —
@@ -971,12 +968,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
          work affecting the framebuffer it reads, and this whole frame lands in the offscreen HDR target. */
     };
     const presentFrame = (): void => {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.disable(gl.DEPTH_TEST);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      presenter.present(target, { theme: liveTheme() });
     };
 
     /*

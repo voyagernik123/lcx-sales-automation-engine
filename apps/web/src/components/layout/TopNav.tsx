@@ -1,4 +1,4 @@
-import { GLASS_CHROME_CLASS } from '@/lib/glass';
+import { GLASS_CHROME_LAYER_CLASS } from '@/lib/glass';
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
@@ -116,6 +116,29 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   const [showOperatorMenu, setShowOperatorMenu] = useState(false);
   const operatorMenuRef = useRef<HTMLDivElement>(null);
+  // THE CHROME FADE (P4): the glass fades between the breadcrumb's right edge and the controls' left edge. The search pill
+  // in that band carries its own solid `bg-page`, so its text never sits on faded glass. Measured by a ResizeObserver.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const measure = () => {
+      const left = header.getBoundingClientRect().left;
+      const crumbs = header.querySelector('nav[aria-label="Breadcrumb"]')?.getBoundingClientRect();
+      const controls = header.lastElementChild?.getBoundingClientRect();
+      const a = crumbs ? crumbs.right - left + 16 : Infinity;
+      const b = controls ? controls.left - left - 16 : header.clientWidth;
+      const ok = Number.isFinite(a) && b - a >= 200;
+      header.style.setProperty('--fade-a', ok ? `${Math.round(a)}px` : '100%');
+      header.style.setProperty('--fade-b', ok ? `${Math.round(b)}px` : '100%');
+    };
+    measure();
+    // No ResizeObserver (jsdom, old WebKit): measure once and leave the band as measured; never throw inside the chrome.
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(header);
+    return () => ro.disconnect();
+  });
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -147,7 +170,8 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
        * clickable tags still block it (drag.js:58) — so no control is sacrificed. */
       data-tauri-drag-region={terminal ? 'deep' : undefined}
       style={terminal ? { paddingLeft: TRAFFIC_LIGHT_INSET_PX } : undefined}
-      className={`flex h-12 shrink-0 items-center gap-4 border-b border-line px-4 ${GLASS_CHROME_CLASS}`}
+      ref={headerRef}
+      className={`chrome-fade-x flex h-12 shrink-0 items-center gap-4 border-b border-line px-4 ${GLASS_CHROME_LAYER_CLASS}`}
     >
       {/* The product signature. The mark inherits `text-navy` via currentColor, so it
         * is legible in both themes without a second asset — and cannot become the

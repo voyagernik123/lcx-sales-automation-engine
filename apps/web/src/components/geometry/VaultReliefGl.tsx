@@ -133,7 +133,7 @@ import {
   createStage, isStage, box, uploadMesh, createLitRenderer, createTarget3D, createShadowMap,
   createAmbientOcclusion, projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
-  hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, statusAlbedo, statusHex,
+  hexToLinear, assertBrandFidelity, IDENTITY, createPresenter, statusAlbedo, statusHex,
   qualitySettings, shadowMapSizeFor, pickQualityTier, LIT_FRAG, SKY_GLSL, bindSky,
   precompensate, isPrecompRefusal, inverseToneMap, skyIrradiance,
   type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
@@ -155,22 +155,7 @@ export interface VaultReliefGlProps {
 
 /* SHADER COMMENTS LIVE ABOVE THE LITERAL. A backtick inside a template literal terminates it — twelve times in
    this repo — and a comment inside a shader string is shipped bytes no minifier can reach. */
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+/* The present shaders that used to live here moved into the engine's ONE present path (look/present.ts, P4). */
 
 /*
  * ══ THE RECORD PROGRAM — UNLIT, AND FOGGED WITH `env/lit.ts`'s OWN BYTES ════════════════════════════
@@ -884,8 +869,11 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       onRefused(code);
     };
 
-    const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-    if ('kind' in present) { refuse(present.code); return; }
+    // THE ONE PRESENT PATH (P4): copy → pipeline (bloom, the one tone map, the one encode) → FXAA → canvas.
+    const presenter = createPresenter(stage);
+    if ('kind' in presenter) { refuse(presenter.code); return; }
+    presenter.resize(W, H);
+    disposers.push(() => presenter.dispose());
     /* NO DISPOSER, and that is `stage.ts`'s rule rather than an omission: a `Stage` owns every program it
        compiles and deletes them with the context. `lit` deletes its own three because it made them itself. */
     const recProg = stage.compile(RECORD_VERT, RECORD_FRAG);
@@ -1244,13 +1232,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       }
 
       renderScene(th, occluders, shellDraws, recDraws, radiance);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.disable(gl.DEPTH_TEST);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      /* `blit` takes a CALLBACK, not a texture: the uniform is set against the program it has just bound. */
-      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      presenter.present(target, { theme: th.name });
       /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a STALE_TIER return cannot leave the observer believing a
          theme is on screen that never reached it. */
       drawnTheme = th.name;

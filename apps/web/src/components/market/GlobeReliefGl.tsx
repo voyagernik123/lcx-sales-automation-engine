@@ -57,7 +57,7 @@ import {
   createShadowMap, createSkyBackdrop, createAmbientOcclusion, viewProjection, eyeOf, nearFarOf,
   lightViewProjection, boundsCentre, boundsRadius, projectScreen, triangleCount,
   hexToLinear, assertBrandFidelity, IDENTITY,
-  TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  createPresenter, loadEnvironmentMap, uploadEnvironment,
   qualitySettings, shadowMapSizeFor, skyIrradiance, luminance,
   precompensate, isPrecompRefusal,
   type LitDraw, type Viewpoint, type MeshBuffer, type CompositeSite,
@@ -93,22 +93,7 @@ export interface GlobeReliefGlProps {
   readonly onRefused: (code: string) => void;
 }
 
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+/* The present shaders that used to live here moved into the engine's ONE present path (look/present.ts, P4). */
 
 /* `EARTH_R` and `PIN_MAX` come from `globeSites` so the pin arithmetic that is unit-tested there and the
    geometry drawn here cannot disagree about the surface a pin stands on. */
@@ -335,8 +320,18 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
       onRefused(code);
     };
 
-    const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-    if ('kind' in present) { refuse(present.code); return; }
+    // THE ONE PRESENT PATH (P4): copy → pipeline (bloom, the one tone map, the one encode) → FXAA → canvas.
+    const presenter = createPresenter(stage);
+    if ('kind' in presenter) { refuse(presenter.code); return; }
+    presenter.resize(W, H);
+    disposers.push(() => presenter.dispose());
+    // THE STUDIO ON THE HERO (P4): the rendered environment lights this surface too — diffuse from a soft LOD, reflections by
+    // roughness (env/sky.ts). Loaded once per context; the frame redraws when it lands; a failed fetch leaves the stops.
+    let env: WebGLTexture | null = null;
+    const HERO_ENV_GAIN = { dark: 0.6, light: 1.0 } as const;
+    const withEnv = <S extends object | undefined>(s: S, th: { name: 'dark' | 'light' }) => (env ? { ...(s ?? {}), envMap: env, envGain: HERO_ENV_GAIN[th.name] } : s);
+    // `redrawForTheme` returns early when the theme is unchanged; the map landing IS a change, so the guard is reset first.
+    disposers.push(loadEnvironmentMap(gl, liveTheme(), (t) => { env = t; drawnTheme = null; redrawForTheme(); }, uploadEnvironment));
     const lit = createLitRenderer(stage);
     if ('kind' in lit) { refuse(lit.code); return; }
     disposers.push(() => lit.dispose());
@@ -641,7 +636,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const draw = (universe: readonly MapPoint[]): void => {
       /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
       const th = sceneTheme(liveTheme());
-      const sky = skyFor(th);
+      const sky = withEnv(skyFor(th), th);
       const ambientK = ambientScaleFor(th);
       /* Any earlier overlay is dropped before the new frame exists, and before any refusal: a projected label
          from the previous filter sitting over a freshly drawn globe is a stale picture presented as live. */
@@ -796,12 +791,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
       if (corridorDraws.length > 0) lit.draw({ ...common, ambientGain: CORRIDOR_AMBIENT * ambientK, draws: corridorDraws });
       lit.draw({ ...common, ambientGain: MARKER_AMBIENT * ambientK, draws: [hubDraw, ...pinDraws] });
 
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.viewport(0, 0, W, H);
-      gl.disable(gl.DEPTH_TEST);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target.texture);
-      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      presenter.present(target, { theme: th.name });
 
       const flush = new Uint8Array(4);
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, flush);
