@@ -37,7 +37,9 @@ type Mod = {
   createStage: typeof import('@lcx/gl/stage.js')['createStage'];
   isStage: typeof import('@lcx/gl/stage.js')['isStage'];
   hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
-  TONE_MAP_GLSL: string; SRGB_ENCODE_GLSL: string;
+  createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
+  createAntialias: typeof import('@lcx/gl/look/aa.js')['createAntialias'];
+  uploadEnvironment: typeof import('@lcx/gl/env/sky.js')['uploadEnvironment'];
   qualitySettings: typeof import('@lcx/gl/env/quality.js')['qualitySettings'];
   shadowMapSizeFor: typeof import('@lcx/gl/env/quality.js')['shadowMapSizeFor'];
   plane: typeof import('@lcx/gl/env/mesh.js')['plane'];
@@ -89,16 +91,16 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
     let alive = true;
     let dispose: (() => void) | null = null;
     void Promise.all([
-      import('@lcx/gl/stage.js'), import('@lcx/gl/look/colour.js'), import('@lcx/gl/look/tonemap.js'),
+      import('@lcx/gl/stage.js'), import('@lcx/gl/look/colour.js'), import('@lcx/gl/look/pipeline.js'), import('@lcx/gl/look/aa.js'),
       import('@lcx/gl/env/quality.js'), import('@lcx/gl/env/mesh.js'), import('@lcx/gl/env/lit.js'),
       import('@lcx/gl/env/target3d.js'), import('@lcx/gl/env/sky.js'), import('@lcx/gl/primitives/points.js'),
       import('@lcx/gl/env/camera.js'), import('@lcx/gl/look/theme.js'), import('@lcx/gl/env/stageScene.js'),
       import('@lcx/gl/math.js'), import('@lcx/gl/motion/index.js'),
-    ]).then(([stg, col, tm, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo]) => {
+    ]).then(([stg, col, pipe, aaMod, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo]) => {
       if (!alive) return;
       start({
         createStage: stg.createStage, isStage: stg.isStage, hexToLinear: col.hexToLinear,
-        TONE_MAP_GLSL: tm.TONE_MAP_GLSL, SRGB_ENCODE_GLSL: tm.SRGB_ENCODE_GLSL,
+        createPipeline: pipe.createPipeline, createAntialias: aaMod.createAntialias, uploadEnvironment: sky.uploadEnvironment,
         qualitySettings: q.qualitySettings, shadowMapSizeFor: q.shadowMapSizeFor,
         plane: mesh.plane, createLitRenderer: lit.createLitRenderer, uploadMesh: lit.uploadMesh,
         createTarget3D: t3d.createTarget3D, createShadowMap: t3d.createShadowMap, createSkyBackdrop: sky.createSkyBackdrop,
@@ -119,19 +121,23 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       const outcome = g.createStage(canvas, { alpha: false });
       if (!g.isStage(outcome)) { setState(`refused:${outcome.code}`); return; }
       const stage = outcome; const gl = stage.gl;
-      const present = stage.compile(`#version 300 es
+      // The lit pass needs a depth buffer (Target3D); the pipeline reads `stage.scene`. One copy joins them, in linear
+      // HDR — no tone map here: the composite is the ONE place a frame is tone-mapped and encoded (PIPELINE_SOURCES).
+      const copy = stage.compile(`#version 300 es
 precision highp float; out vec2 vUv;
 void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`,
         `#version 300 es
 precision highp float; in vec2 vUv; uniform sampler2D uScene; out vec4 frag;
-${g.TONE_MAP_GLSL}
-${g.SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`);
+void main(){ frag = vec4(texture(uScene, vUv).rgb, 1.0); }`);
+      const pipeline = g.createPipeline(stage);
+      const aa = g.createAntialias(stage);
       const lit = g.createLitRenderer(stage);
       const skyB = g.createSkyBackdrop(stage);
       const shadow = g.createShadowMap(stage, g.shadowMapSizeFor(tier, SHADOW_BASELINE));
       const bail = (reason: string) => { setState(`refused:${reason}`); stage.dispose(); };
-      if ('kind' in present) return bail(present.code);
+      if ('kind' in copy) return bail(copy.code);
+      if ('kind' in pipeline) return bail(pipeline.code);
+      if ('kind' in aa) return bail(aa.code);
       if ('kind' in lit) return bail(lit.code);
       if ('kind' in skyB) return bail(skyB.code);
       if ('kind' in shadow) return bail(shadow.code);
@@ -159,21 +165,45 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         return { x: r.left - hr.left, y: r.top - hr.top, w: r.width, h: r.height };
       };
 
+      let ldr: Target3D | null = null;                     // the composite, encoded, for the anti-alias pass
+      let env: WebGLTexture | null = null, envFor = '', envReq = 0;
+      const loadEnvironment = (dark: boolean) => {
+        const name = dark ? 'dark' : 'light';
+        if (envFor === name) return;
+        envFor = name;
+        const req = ++envReq;
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
+          if (!alive || req !== envReq) return;               // a theme flip raced the fetch: the later one wins
+          if (env) gl.deleteTexture(env);
+          env = g.uploadEnvironment(gl, img);
+          // Instrument-facing, like __LCX_STAGE_REDRAW: which studio is bound, so a capture can wait for it instead of guessing.
+          (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY = name;
+          invalidate();
+        };
+        img.onerror = () => { /* procedural stops remain: the studio is an upgrade, never a dependency */ };
+        img.src = `/objects/env-${name}.webp`;
+      };
       const size = () => {
         const cssW = Math.max(1, host.clientWidth), cssH = Math.max(1, host.clientHeight);
         const w = Math.round(cssW * dpr), h = Math.round(cssH * dpr);
         if (w === W && h === H && target) return;
         W = w; H = h; canvas.width = W; canvas.height = H;
-        target?.dispose();
+        stage.setRegion(W, H);
+        target?.dispose(); ldr?.dispose();
         const t = g.createTarget3D(stage, W, H);
         target = 'kind' in t ? null : t;
+        const l = g.createTarget3D(stage, W, H);
+        ldr = 'kind' in l ? null : l;
       };
 
       const draw = () => {
         if (!alive) return;
         size();
-        if (!target) return;
+        if (!target || !ldr) return;
         const dark = document.documentElement.classList.contains('dark');
+        loadEnvironment(dark);
         const theme = g.sceneTheme(dark ? 'dark' : 'light');
         const aspect = W / H;
         const vp = g.viewProjection(view, aspect);
@@ -224,8 +254,8 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const light = { direction: g.scene.STAGE_KEY_DIR, colour: [L.keyGain, L.keyGain * 0.98, L.keyGain * 0.94] as [number, number, number] };
         const lightVP = g.lightViewProjection(light, [cx, g.scene.PLATE_Y, (top[0][2] + top[3][2]) / 2], 9);
         const draws = [
-          { mesh: floorMesh, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.structure, roughness: 0.82, metalness: 0.05 } },
-          ...(slab ? [{ mesh: slab, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.plate, roughness: 0.5, metalness: 0.1 } }] : []),
+          { mesh: floorMesh, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.structure, roughness: 0.7, metalness: 0.05 } },
+          ...(slab ? [{ mesh: slab, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.plate, roughness: 0.28, metalness: 0.08 } }] : []),   // glossy enough to mirror the studio's front key (P3)
         ];
         lit.shadowPass(lightVP, draws, shadow);
         target.bind();
@@ -235,7 +265,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const horizon = dark
           ? ([theme.skyHorizon[0] * 0.85 + brand[0] * 0.05, theme.skyHorizon[1] * 0.85 + brand[1] * 0.05, theme.skyHorizon[2] * 0.85 + brand[2] * 0.08] as const)
           : ([theme.skyHorizon[0] * 0.80 + brand[0] * 0.14, theme.skyHorizon[1] * 0.84 + brand[1] * 0.14, theme.skyHorizon[2] * 0.92 + brand[2] * 0.10] as const);
-        const skyStops = { zenith: theme.skyZenith, horizon, ground: theme.structure };
+        const skyStops = { zenith: theme.skyZenith, horizon, ground: theme.structure, envMap: env, envGain: L.envGain };
         skyB.draw({ eye, target: view.target, fovDeg: view.fovDeg, aspect, sky: skyStops });
         lit.depthPrepass(vp, draws);
         lit.draw({
@@ -245,15 +275,25 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         } as Parameters<typeof lit.draw>[0]);
         if (glows) {
           gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false);
-          glows.draw(vp, { size: L.glowSize, lo: g.hexToLinear(dark ? '#2C6BFF' : '#1F4FCC'), hi: g.hexToLinear(dark ? '#7FA6FF' : '#2C6BFF'), gain: L.glowGain, floorY: -1 });
+          // Dark glows are DEEP blue on purpose (chroma-led, P3): the .04 luminance ceiling is spent on blue, whose luminance weight
+          // is .07, so the room stays visible through the plate (channel delta) without spending luminance on it.
+          glows.draw(vp, { size: L.glowSize, lo: g.hexToLinear(dark ? '#1A3FCC' : '#1F4FCC'), hi: g.hexToLinear(dark ? '#2C6BFF' : '#2C6BFF'), gain: L.glowGain, floorY: -1 });
           gl.depthMask(true); gl.disable(gl.BLEND);
         }
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, W, H);
         gl.disable(gl.DEPTH_TEST);
+        stage.bindTarget(stage.scene);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, target.texture);
-        stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+        stage.blit(copy, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+        // Bloom only over what is brighter than the room: the glows in dark, the softboxes' reflections in light. The
+        // plate is black because the scene already fills the frame (the composite ADDS the plate; §5 P3 spec).
+        pipeline.resolve({
+          threshold: dark ? [0.55, 1.3] : [1.05, 2.1], bloomGain: dark ? 0.36 : 0.22, blurSteps: [1, 2, 2],
+          plate: [0, 0, 0], vignetteDepth: 0, into: ldr,
+        });
+        stage.bindTarget(null);
+        gl.viewport(0, 0, W, H);
+        aa.apply(ldr.texture, W, H);
         gl.enable(gl.DEPTH_TEST);
         setState('drawn');
       };
@@ -265,6 +305,9 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       let pending = false;
       const invalidate = () => { if (pending) return; pending = true; queueMicrotask(() => { pending = false; draw(); }); };
       drawRef.current = invalidate;
+      /* THE REDRAW CONTRACT (P0 → P3). One forced synchronous frame, returning its own wall time in ms, so the instrument
+         can report the stage's cost per route×theme and P8 can hold it under budget. Read by nothing in the product. */
+      (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW = () => { const t0 = performance.now(); draw(); return performance.now() - t0; };
       moveRef.current = (next) => {
         if (next === room) { invalidate(); return; }              // same room, new page: a cut
         const from = view, to = g.scene.roomFraming(next as never);
@@ -293,7 +336,15 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const mo = new MutationObserver(invalidate);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
       invalidate();
-      dispose = () => { ro.disconnect(); mo.disconnect(); offFrame?.(); glows?.dispose(); slab?.dispose(); target?.dispose(); stage.dispose(); };
+      dispose = () => { delete (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW; delete (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY; ro.disconnect(); mo.disconnect(); offFrame?.(); envReq++; if (env) gl.deleteTexture(env); glows?.dispose(); slab?.dispose(); target?.dispose(); ldr?.dispose(); aa.dispose(); pipeline.dispose(); stage.dispose(); };
+      // THE INSTRUMENT'S IN-PLACE GL-OFF (P3): same page, second capture without GL. Dispose, blank the drawing buffer so
+      // the page ground shows through, and name the state — the same refusal code a fresh createStage gives under
+      // `__LCX_GL_OFF`. Nothing in the product dispatches this event.
+      // Hide the canvas as well as disposing: a disposed context keeps its last presented frame on screen, and the
+      // measurement wants the page WITHOUT its GL layer — the ground the plate would show over a refused stage.
+      const forceOff = () => { const d = dispose; dispose = () => {}; d?.(); canvas.style.display = 'none'; setState('refused:FORCED_OFF_FOR_MEASUREMENT'); };   // inline: a display utility class beats [hidden]
+      window.addEventListener('lcx:gl-force-off', forceOff, { once: true });
+      { const d = dispose; dispose = () => { window.removeEventListener('lcx:gl-force-off', forceOff); d?.(); }; }
     }
     return () => { alive = false; drawRef.current = null; moveRef.current = null; dispose?.(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

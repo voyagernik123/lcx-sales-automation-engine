@@ -28,6 +28,11 @@
  *                            authored outside the token system, per route closure
  *   5  density      RUNTIME  numeric figures visible in the first viewport (elements whose text carries a digit)
  *   6  GL reach     STATIC   routes whose closure includes an environment; RUNTIME GL contexts created
+ *   7  visibility   RUNTIME  GL coverage: share of viewport pixels that differ between the page as shipped and the same
+ *                            page with every GL layer forced off (THE PRODUCTION P0). Two races the pair carried, both
+ *                            fixed in P3 and RECORDED beside every number: the stage's async studio map (`stageEnv` — the
+ *                            capture waits ≤ 4 s for `__LCX_STAGE_ENV_READY`) and the offline strip's health probe (health
+ *                            is answered deterministically on every route; `busyAtCapture` counts spinners at the shot).
  *
  * OUTPUT  docs/instrument/audit/BASELINE.json (machine) and BASELINE.md (human), both stamped with HEAD and
  *         the instant. Viewport captures land in docs/instrument/audit/shots/ (gitignored — 160 PNGs are
@@ -463,6 +468,7 @@ async function validateVisibilityMaths(browser) {
   console.log(`  visibility controls: known 40% area read ${(m.coverage * 100).toFixed(1)}% (ΔE ${m.delta.toFixed(1)}); identical captures 0%`);
 }
 
+const INPLACE_OFF = process.env.INSTRUMENT_INPLACE_OFF !== '0';   // default ON since P3: the pair from ONE page load
 async function captureRoute(browser, route, theme, glOff = false) {
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1, timezoneId: 'UTC', locale: 'en-GB',
@@ -478,6 +484,15 @@ async function captureRoute(browser, route, theme, glOff = false) {
     await page.addInitScript(themeSeed, { dark: theme === 'dark', scope: route.seated ? SEAT.email : 'anon' });
     await page.addInitScript(PROBE);
     await page.route('**/v1/**', (r) => r.abort('connectionrefused'));
+    // THE HEALTH FIXTURE (P3): infrastructure state, not content. `OfflineBanner` renders a top strip until a health probe
+    // proves the API reachable, and whether that proof lands before the capture is a per-load race — one capture of a pair
+    // carried the strip and the other did not, so every pixel below it shifted and counted as GL coverage (three
+    // identical probes read 8/8/35 on one route). Answering health deterministically on EVERY route pins the layout; the
+    // data endpoints stay aborted, so the floor is still the floor. Registered after the abort: later handlers win.
+    await page.route('**/v1/health*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ok: true, service: 'lcx-sales-api', version: 'harness', env: 'instrument', db: 'up', timestamp: new Date(FROZEN_AT).toISOString(), node: 'harness' }),
+    }));
     if (FIXTURES && DESK_ROUTES.has(route.path)) {
       // Registered AFTER the abort: Playwright gives later handlers priority, so the floor stays the floor.
       for (const [glob, body] of allDeskFixtures(new Date(FROZEN_AT).toISOString())) await page.route(glob, (r) => r.fulfill(body()));
@@ -488,6 +503,29 @@ async function captureRoute(browser, route, theme, glOff = false) {
     let reached = 'REACHED';
     try { await anchor.waitFor({ state: 'visible', timeout: 20_000 }); } catch { reached = 'SHELL_NEVER_MOUNTED'; }
     await page.waitForTimeout(1500);
+    // THE STUDIO RACE (P3): the stage fetches its environment map after the first frame and redraws when it lands. A capture
+    // taken before that redraw photographs the procedural sky; one taken after photographs the studio — the same route read
+    // 11% and 38% in two runs with nothing changed. Wait (bounded) for the stage to say which map is bound, and RECORD it,
+    // so a coverage number always says what frame it measured. GL-off runs have no stage and skip this.
+    let stageEnv = null;
+    if (route.seated && reached === 'REACHED' && !glOff) {
+      await page.waitForFunction(
+        () => !!globalThis.__LCX_STAGE_ENV_READY || (document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? '').startsWith('refused'),
+        null, { timeout: 4000 },
+      ).catch(() => {});
+      await page.waitForTimeout(250);
+      stageEnv = await page.evaluate(() => globalThis.__LCX_STAGE_ENV_READY ?? null).catch(() => null);
+    }
+    // THE CONTENT RACE (P3, found by two identical probes disagreeing by 30 points on data pages): fixture responses and the
+    // panels they fill can land before or after the capture, which moves how much of the plate is opaque card. Wait
+    // (bounded) for the network to go quiet and RECORD how many busy indicators were still spinning at capture, so a
+    // number carries the page state it measured.
+    let busyAtCapture = -1;
+    if (reached === 'REACHED') {
+      await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      busyAtCapture = await page.evaluate(() => document.querySelectorAll('.animate-spin').length).catch(() => -1);
+    }
     if (process.env.INSTRUMENT_MOVE_TRACE === '1' && route.seated && reached === 'REACHED') {
       // THE MOVE (P2): click the first in-app link that leaves this route, count the stage's frames for 600 ms, then
       // confirm rest: zero frames in the following 600 ms. `__instrument.rafCalls` counts the one clock's frames.
@@ -563,14 +601,50 @@ async function captureRoute(browser, route, theme, glOff = false) {
         } catch (e) { nav.error = String(e).slice(0, 120); }
       }
     }
+    // THE STAGE'S COST (P3): ten forced redraws, median wall time. `-1` when no stage is drawn on this route.
+    const stageRedrawMs = await page.evaluate(() => {
+      const f = globalThis.__LCX_STAGE_REDRAW; if (typeof f !== 'function') return -1;
+      const t = []; for (let i = 0; i < 10; i++) t.push(f()); t.sort((a, b) => a - b); return Number(t[5].toFixed(2));
+    }).catch(() => -1);
     const read = await page.evaluate(READ_PAGE);
     mkdirSync(SHOTS, { recursive: true });
     const stem = `${route.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
     let shot = null; let png = null;
+    // THE PAIR IS TWO PAGE LOADS (P3): the GL-on and GL-off captures come from separate loads whose content can differ at
+    // the shot (fixture panels, lazy chunks, entrance states) — and the metric counts every differing pixel as GL. Wait for
+    // the page TEXT to settle (unchanged for 600 ms, ≤ 5 s) and fingerprint it; the pair is compared by fingerprint and a
+    // mismatch is recorded and excluded from the aggregates, never averaged in.
+    // THE TRANSITION RACE (P3, the third one): the shot follows the continuity navigation and its return, and a view
+    // transition (S3) or an entrance animation can still be mid-flight when the screenshot is taken — same text, different
+    // pixels. Wait (≤ 3 s) until no animation has been running for 300 ms, and RECORD what was still running at the shot.
+    const quiet = await page.evaluate(async () => {
+      const running = () => document.getAnimations().filter((a) => a.playState === 'running');
+      const t0 = performance.now(); let since = performance.now();
+      while (performance.now() - t0 < 3000) { const r = running(); if (r.length) since = performance.now(); else if (performance.now() - since >= 300) break; await new Promise((res) => setTimeout(res, 50)); }
+      const r = running();
+      return { animationsAtShot: r.length, vtAtShot: r.filter((a) => /view-transition/.test(String((a.effect && 'pseudoElement' in a.effect ? a.effect.pseudoElement : '') ?? ''))).length };
+    }).catch(() => ({ animationsAtShot: -1, vtAtShot: -1 }));
+    const domFp = await page.evaluate(async () => {
+      // The WHOLE body, plus the scroll offset: a strip above <main> or a scrolled viewport moves every pixel just the same.
+      const fp = () => { const t = document.body?.innerText ?? ''; let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return `${Math.round(scrollY)}|${t.length}:${h}`; };
+      const t0 = performance.now(); let last = fp(), since = performance.now();
+      while (performance.now() - t0 < 5000) { await new Promise((r) => setTimeout(r, 150)); const f = fp(); if (f !== last) { last = f; since = performance.now(); } else if (performance.now() - since >= 600) break; }
+      return last;
+    }).catch(() => null);
     try { png = await page.screenshot({ timeout: 15_000 }); if (!glOff) { writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } } catch { /* a missing shot is reported as such */ }
-    if (glOff) return { theme, reached, png, glOff: true };
+    // THE PAIR FROM ONE PAGE LOAD (P3): force GL off IN PLACE and shoot again. The stage disposes and blanks; every relief
+    // falls back flat; nothing else about the page changes — so the two captures differ only by GL.
+    let pngOff = null, offState = null;
+    if (INPLACE_OFF && !glOff && png && VISIBILITY && reached === 'REACHED') {
+      await page.evaluate(() => { window.__LCX_GL_OFF = true; window.dispatchEvent(new Event('lcx:gl-force-off')); }).catch(() => {});
+      await page.waitForFunction(() => (document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? 'none').startsWith('refused') || !document.querySelector('[data-stage]'), null, { timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      offState = await page.evaluate(() => ({ stage: document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? null, canvases: document.querySelectorAll('canvas').length })).catch(() => null);
+      try { pngOff = await page.screenshot({ timeout: 15_000 }); } catch { /* reported as a missing pair */ }
+    }
+    if (glOff) return { theme, reached, png, glOff: true, domFp, ...quiet };
     // `animations` = at rest (before the navigation); the post-return count travels beside it, never as the finding.
-    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, nav, pageErrors: errs.slice(0, 5), shot, png };
+    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, nav, pageErrors: errs.slice(0, 5), shot, png };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }
@@ -617,18 +691,28 @@ async function main() {
           runtime[r.path][theme] = on;
           process.stdout.write(` ${theme}:${on.reached === 'REACHED' ? '✓' : '✗'}`);
           if (VISIBILITY && on.png && on.reached === 'REACHED') {
-            const off = await captureRoute(browser, r, theme, true);
+            // In-place pair (default): the OFF capture came from the same page load. Two-load pair only when INSTRUMENT_INPLACE_OFF=0.
+            let off = INPLACE_OFF && on.pngOff ? { png: on.pngOff, domFp: on.domFp, inPlace: true } : await captureRoute(browser, r, theme, true);
+            let offRetried = false;
+            if (off.png && on.domFp && off.domFp && off.domFp !== on.domFp) {
+              // The two loads showed different pages. One more GL-off load; if it still differs, the pair is recorded as such.
+              const again = await captureRoute(browser, r, theme, true);
+              offRetried = true;
+              if (again.png) off = again;
+            }
             if (off.png) {
+              const domMatch = !on.domFp || !off.domFp ? null : on.domFp === off.domFp;
               const m = await measureVisibility(lab, on.png, off.png);
               const stem = `${r.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
               mkdirSync(join(GALLERY_DIR, 'gallery'), { recursive: true });
               writeFileSync(join(GALLERY_DIR, 'gallery', `${stem}-on.webp`), Buffer.from(m.thumbOn.split(',')[1], 'base64'));
               writeFileSync(join(GALLERY_DIR, 'gallery', `${stem}-off.webp`), Buffer.from(m.thumbOff.split(',')[1], 'base64'));
-              on.visibility = { coverage: Number(m.coverage.toFixed(4)), delta: Number(m.delta.toFixed(2)), thumbOn: `gallery/${stem}-on.webp`, thumbOff: `gallery/${stem}-off.webp` };
-              process.stdout.write(`(gl ${(m.coverage * 100).toFixed(0)}%)`);
+              on.visibility = { coverage: Number(m.coverage.toFixed(4)), delta: Number(m.delta.toFixed(2)), domMatch, offRetried, inPlace: !!off.inPlace, offState: on.offState ?? null, thumbOn: `gallery/${stem}-on.webp`, thumbOff: `gallery/${stem}-off.webp` };
+              process.stdout.write(`(gl ${(m.coverage * 100).toFixed(0)}%${domMatch === false ? ' †dom' : ''})`);
             }
           }
           delete on.png;
+          delete on.pngOff;
         }
         process.stdout.write('\n');
       }
@@ -663,8 +747,9 @@ async function main() {
       routesWithRafLoop: rt.filter((x) => (x.dark?.rafPerSecond ?? 0) > 10).length,
       routesWithGlContext: rt.filter((x) => (x.dark?.gl ?? 0) > 0).length,
       /* THE PRODUCTION's judge: routes where GL changes more than 5% of the viewport, and the median share. */
-      routesWithGlVisible: { dark: rt.filter((x) => (x.dark?.visibility?.coverage ?? 0) > 0.05).length, light: rt.filter((x) => (x.light?.visibility?.coverage ?? 0) > 0.05).length },
-      medianGlCoverage: { dark: median(rt.map((x) => x.dark?.visibility?.coverage ?? 0)), light: median(rt.map((x) => x.light?.visibility?.coverage ?? 0)) },
+      pairsExcludedDomMismatch: { dark: rt.filter((x) => x.dark?.visibility?.domMatch === false).length, light: rt.filter((x) => x.light?.visibility?.domMatch === false).length },
+      routesWithGlVisible: { dark: rt.filter((x) => x.dark?.visibility?.domMatch !== false && (x.dark?.visibility?.coverage ?? 0) > 0.05).length, light: rt.filter((x) => x.light?.visibility?.domMatch !== false && (x.light?.visibility?.coverage ?? 0) > 0.05).length },
+      medianGlCoverage: { dark: median(rt.filter((x) => x.dark?.visibility?.domMatch !== false).map((x) => x.dark?.visibility?.coverage ?? 0)), light: median(rt.filter((x) => x.light?.visibility?.domMatch !== false).map((x) => x.light?.visibility?.coverage ?? 0)) },
       medianFiguresInViewport: median(rt.map((x) => x.dark?.figures ?? 0)),
       routesWithPageErrors: rt.filter((x) => (x.dark?.pageErrors?.length ?? 0) > 0).length,
     },
@@ -754,7 +839,7 @@ function renderGallery(t, routes, runtime) {
     const rows = routes.map((r) => {
       const v = runtime[r.path]?.[theme]?.visibility;
       if (!v) return `| \`${r.path}\` | _not captured_ | | — | — |`;
-      return `| \`${r.path}\` | ![shipped](${v.thumbOn}) | ![GL off](${v.thumbOff}) | **${pct(v.coverage)}** | ${v.delta.toFixed(1)} |`;
+      return `| \`${r.path}\` | ![shipped](${v.thumbOn}) | ![GL off](${v.thumbOff}) | **${pct(v.coverage)}**${v.domMatch === false ? ' †' : ''} | ${v.delta.toFixed(1)} |`;
     });
     return `### ${theme}\n\n| route | as shipped | GL forced off | GL coverage | mean ΔE76 |\n|---|---|---|---|---|\n${rows.join('\n')}\n`;
   };
@@ -768,6 +853,7 @@ function renderGallery(t, routes, runtime) {
 
 | | dark | light |
 |---|---|---|
+| pairs excluded — the two captures showed different page text (†) | ${t.runtime.pairsExcludedDomMismatch?.dark ?? '—'} | ${t.runtime.pairsExcludedDomMismatch?.light ?? '—'} |
 | routes where GL is visible (coverage > 5%) | **${t.runtime.routesWithGlVisible?.dark ?? '—'}** of ${t.routes} | **${t.runtime.routesWithGlVisible?.light ?? '—'}** of ${t.routes} |
 | median GL coverage of the viewport | **${pct(t.runtime.medianGlCoverage?.dark ?? 0)}** | **${pct(t.runtime.medianGlCoverage?.light ?? 0)}** |
 

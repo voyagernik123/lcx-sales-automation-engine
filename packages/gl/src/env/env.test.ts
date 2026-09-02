@@ -1785,20 +1785,26 @@ describe('SPLIT-SUM DFG — the environment specular had no BRDF integration ter
   it('takes no texture unit, which is the reason the analytic fit was chosen over a LUT', () => {
     /* lit.ts binds the shadow map on unit 0 and AO on unit 1 and has already had one feedback-hazard
        bug from that bookkeeping. A DFG LUT would be a third. Pinned so nobody adds one quietly. */
-    expect(LIT_FRAG.match(/uniform sampler2D/g) ?? []).toHaveLength(2);
+    /* Three since THE PRODUCTION P3: the environment map (SKY_GLSL, bound on ENV_MAP_UNIT 7 by bindSky, clear of the
+       shadow/AO units). Still no LUT: the DFG stays analytic. */
+    expect(LIT_FRAG.match(/uniform sampler2D/g) ?? []).toHaveLength(3);
     expect(LIT_FRAG).toContain('uniform sampler2D uShadowMap;');
     expect(LIT_FRAG).toContain('uniform sampler2D uAO;');
+    expect(LIT_FRAG).toContain('uniform sampler2D uEnvMap;');
     expect(LIT_FRAG).not.toMatch(/uniform sampler2D u\w*(DFG|Brdf|BRDF|Lut|LUT)/);
   });
 });
 
 describe('kd ON ENVIRONMENT DIFFUSE — the missing factor, and why it is 1-specWeight not 1-F', () => {
   it('the shader applies it, and derives it from what the specular actually took', () => {
+    /* P3: the diffuse sample is a SOFT LOD of the environment (skyColourLod; the procedural sky ignores the LOD). The kd
+       factor is unchanged. */
     expect(LIT_FRAG).toContain(
-      'vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);',
+      'vec3 envDiffuse = skyColourLod(N, 5.5) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);',
     );
-    /* The exact line that was shipping, banned by shape so a revert cannot pass. */
+    /* The exact line that was shipping, banned by shape so a revert cannot pass — in both the old and the LOD form. */
     expect(LIT_FRAG).not.toContain('vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - uMetalness);');
+    expect(LIT_FRAG).not.toContain('vec3 envDiffuse = skyColourLod(N, 5.5) * uBaseColour * (1.0 - uMetalness);');
     /* And the roughness clamp both floors below depend on. */
     expect(LIT_FRAG).toContain('float rough = clamp(uRoughness, 0.045, 1.0);');
   });

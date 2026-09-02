@@ -80,6 +80,8 @@ export { precompensate, isPrecompRefusal, precompHeadroom, inverseToneMap } from
 export type { CompositeSite, PrecompRefusal, BlendDest } from './look/precompensate.js';
 export { createPipeline, PIPELINE_SOURCES } from './look/pipeline.js';
 export type { Pipeline, PipelineOptions } from './look/pipeline.js';
+export { createAntialias, AA_SOURCE } from './look/aa.js';
+export type { Antialias } from './look/aa.js';
 
 /* L2 · SEMANTIC STATUS COLOUR — status is the third category, neither identity nor absence, and its
    VALUE belongs to the platform rather than to a scene. Reachable from the barrel for the same

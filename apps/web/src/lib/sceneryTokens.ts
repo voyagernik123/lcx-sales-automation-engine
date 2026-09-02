@@ -40,11 +40,36 @@
    GL surface uses. This module is imported only by the generator and the ratchet, never by app code, so
    it costs the bundle nothing either way; the specifier is chosen for consistency with the rule. */
 import { AUTHORED_HEX, type ThemeName } from '@lcx/gl/look/theme.js';
+import { STAGE_LIGHT } from '@lcx/gl/env/stageScene.js';
 
 export const SCENERY_BEGIN = '/* @generated scenery — derived from packages/gl/src/look/theme.ts by scripts/gen-scenery-tokens.ts (S2 ONE MATERIAL). Do not edit; run `npm run gen:tokens -w apps/web`. */';
 export const SCENERY_END = '/* @end generated scenery */';
 export const CHART_BEGIN = '/* @generated scenery (chart twin) — see above. */';
 export const CHART_END = '/* @end generated scenery (chart twin) */';
+export const EDGE_BEGIN = '/* @generated edge — the rig\'s key lights every panel\'s edge; derived by scripts/gen-scenery-tokens.ts (THE PRODUCTION, P3). Do not edit. */';
+export const EDGE_END = '/* @end generated edge */';
+
+/**
+ * THE EDGE MODEL. The key comes from the upper left (`STAGE_KEY_DIR`, x +, y −, z +), so a panel standing on the stage
+ * catches light on its top and left edges and shadows its bottom and right. The hairline alphas scale with the rig's
+ * `keyGain` and `shadowStrength` per theme — the same numbers that light the GL scene — so the DOM's panels and the
+ * stage's slab are lit by one rig, which is the whole of S2 ONE MATERIAL. Both hairlines are decorative (`contrast.test.ts`
+ * classifies the hairline token so) and 1 px, so they never carry information or a floor.
+ */
+export function renderEdgeBlock(theme: ThemeName): string {
+  // THE STAGE'S rig (stageScene.STAGE_LIGHT), not the reliefs' (theme.ts): the panels stand in the room the stage lights.
+  const t = STAGE_LIGHT[theme];
+  const hiA = Math.min(0.2, 0.04 + t.keyGain * 0.03).toFixed(2);
+  const loA = Math.min(0.3, 0.06 + t.shadowStrength * 0.2).toFixed(2);
+  const hi = '255 255 255';
+  const lo = theme === 'dark' ? '0 0 0' : '9 14 27';
+  return [`  ${EDGE_BEGIN}`,
+    `  --edge-hi: ${hi};`.padEnd(30) + ` /* the key's highlight, top-left hairline */`,
+    `  --edge-hi-a: ${hiA};`.padEnd(30) + ` /* = 0.04 + keyGain ${t.keyGain} × 0.03 */`,
+    `  --edge-lo: ${lo};`.padEnd(30) + ` /* the key's shadow, bottom-right hairline */`,
+    `  --edge-lo-a: ${loA};`.padEnd(30) + ` /* = 0.06 + shadowStrength ${t.shadowStrength} × 0.2 */`,
+    `  ${EDGE_END}`].join('\n');
+}
 
 /** `#RRGGBB` → `"r g b"`, the triple shape every reader of tokens.css parses. */
 export function hexToTriple(hex: string): string {

@@ -124,6 +124,12 @@ export interface PipelineOptions {
    * layer composited over existing DOM. Requires the stage's context to have `alpha: true`.
    */
   readonly transparent?: boolean;
+  /**
+   * Resolve INTO this target instead of the canvas (THE PRODUCTION, P3). The composite is the one place the frame is
+   * tone-mapped and sRGB-encoded; a post pass that wants the ENCODED image (anti-aliasing reads perceptual luma) needs
+   * it in a texture. Omit for today's behaviour: straight to the canvas.
+   */
+  readonly into?: RenderTarget | null;
 }
 
 export interface Pipeline {
@@ -181,7 +187,7 @@ export function createPipeline(stage: Stage): Pipeline | StageRefusal {
         const t = src; src = dst; dst = t;
       });
 
-      stage.bindTarget(null);
+      stage.bindTarget(opts.into ?? null);
       stage.blit(composite, (p) => {
         bindSource(p, stage.scene, 'uScene', 0);
         bindSource(p, src, 'uBloom', 1);

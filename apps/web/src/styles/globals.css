@@ -578,3 +578,12 @@ path.state:hover {
  *     Pure decoration; instant is strictly better here.
  */
 
+/* THE EDGE MODEL (S2 ONE MATERIAL's unbuilt half; THE PRODUCTION, P3). Every panel that carries `bg-card` is lit by the
+   rig's key: a 1 px highlight on the top and left edges, a 1 px shadow on the bottom and right, with intensities
+   GENERATED from the same keyGain/shadowStrength that light the GL stage (tokens.css, `@generated edge`). Composed with
+   Tailwind's own shadow and ring variables so `shadow-*` and `ring-*` utilities keep working. Decorative: 1 px, never a
+   floor, never information. */
+.bg-card {
+  --lcx-edge: inset 1px 1px 0 0 rgb(var(--edge-hi) / var(--edge-hi-a)), inset -1px -1px 0 0 rgb(var(--edge-lo) / var(--edge-lo-a));
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--lcx-edge), var(--tw-shadow, 0 0 #0000);
+}

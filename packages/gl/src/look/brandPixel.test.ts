@@ -86,9 +86,18 @@ describe('the recorded measurement is current and was not written by hand', () =
     for (const k of KEYS) {
       expect(record.rows[k], `${k} has no measured pixel — re-run docs/3d/brand-fidelity.mjs`)
         .toBeTruthy();
-      for (const cfg of ['compositeOnly', 'asShipped', 'litMarker', 'litCentre']) {
+      for (const cfg of ['compositeOnly', 'asShipped', 'antialiased', 'litMarker', 'litCentre']) {
         expect(record.rows[k][cfg]?.pixel, `${k}/${cfg} missing`).toMatch(/^#[0-9a-f]{6}$/);
       }
+    }
+  });
+
+  it('the anti-alias pass returns a flat field untouched — antialiased equals compositeOnly, every colour', () => {
+    /* THE PRODUCTION, P3. FXAA blends only across a luma edge; a flat brand mark has none, so the pass must hand
+       the composite's pixel through EXACTLY — not "within ΔE 2". Measured by docs/3d/brand-fidelity.mjs on the
+       shipped path (composite → LDR target → FXAA → canvas), held here to the byte. */
+    for (const k of KEYS) {
+      expect(record.rows[k].antialiased!.pixel, `${k}: FXAA moved a flat field`).toBe(record.rows[k].compositeOnly!.pixel);
     }
   });
 

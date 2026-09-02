@@ -574,8 +574,10 @@ void main(){
   float Ess = dfg.x + dfg.y;
   vec3 specWeight = max(vec3(0.0), f0 * dfg.x + dfg.y);
   vec3 msComp = 1.0 + f0 * (1.0 / max(1e-3, Ess) - 1.0);
-  vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);
-  vec3 envSpecular = skyColour(normalize(mix(R, N, rough * rough))) * specWeight * msComp;
+  // With a real environment bound, irradiance is a SOFT sample (LOD 5.5 of a 1024×512 map ≈ a 32×16 blur) and the
+  // reflection sharpens with smoothness (LOD by roughness). The procedural sky ignores the LOD.
+  vec3 envDiffuse = skyColourLod(N, 5.5) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);
+  vec3 envSpecular = skyColourLod(normalize(mix(R, N, rough * rough)), rough * 6.0) * specWeight * msComp;
   float ao = uAOEnabled > 0.5 ? texture(uAO, gl_FragCoord.xy / uScreenSize).r : 1.0;
   vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain * ao;
 

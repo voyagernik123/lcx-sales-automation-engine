@@ -56,7 +56,7 @@ const ROOT = resolve(HERE, '../..');
  */
 const ENTRY = `
 import {
-  createStage, isStage, createPipeline, PIPELINE_SOURCES,
+  createStage, isStage, createPipeline, createAntialias, PIPELINE_SOURCES,
   BRAND, BRAND_HEX, linearToHex, hexToLinear,
   createLitRenderer, uploadMesh, sphere, createTarget3D,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
@@ -157,9 +157,16 @@ window.__measure = () => {
   if ('kind' in present) return { refusal: present };
   const pipeline = createPipeline(stage);
   if ('kind' in pipeline) return { refusal: pipeline };
+  /* THE ANTI-ALIASED PATH (THE PRODUCTION, P3). The stage resolves the composite INTO an LDR target and FXAA writes
+     the canvas. A flat field has no luma gradient, so FXAA must return the composite's pixel exactly — measured, not
+     assumed: 'antialiased' is held to 'compositeOnly' pixel-for-pixel by brandPixel.test.ts. */
+  const aa = createAntialias(stage);
+  if ('kind' in aa) return { refusal: aa };
+  const ldr = createTarget3D(stage, W, H);
+  if ('kind' in ldr) return { refusal: ldr };
 
   const keys = Object.keys(BRAND_HEX);
-  const out = { driver, hdr: stage.hdr, keys, compositeOnly: {}, asShipped: {}, litMarker: {}, litCentre: {}, litCoverage: {} };
+  const out = { driver, hdr: stage.hdr, keys, compositeOnly: {}, asShipped: {}, antialiased: {}, litMarker: {}, litCentre: {}, litCoverage: {} };
 
   const fill = (c) => {
     gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
@@ -178,6 +185,12 @@ window.__measure = () => {
     // The defaults a flat chart surface gets when it passes no options.
     pipeline.resolve({});
     out.asShipped[k] = centrePixel(gl);
+    fill(BRAND[k]);
+    pipeline.resolve({ plate: [0, 0, 0], bloomGain: 0, into: ldr });
+    stage.bindTarget(null);
+    gl.viewport(0, 0, W, H);
+    aa.apply(ldr.texture, W, H);
+    out.antialiased[k] = centrePixel(gl);
   }
 
   /* ── THE LIT PATH ────────────────────────────────────────────────────────────────────
@@ -210,6 +223,11 @@ window.__measure = () => {
   const t3d = createTarget3D(stage, W, H);
   if ('kind' in t3d) return { ...out, litRefusal: t3d };
 
+  /* Start the lit measurement from a CLEAN binding state. The flat loop leaves textures on units 0/1 (the composite's
+     scene and bloom, then the AA pass's LDR image); a lit draw that samples a unit still holding a texture attached to
+     the bound framebuffer is a feedback loop, which WebGL rejects with INVALID_OPERATION and SwiftShader drops. */
+  for (let u = 0; u < 8; u++) { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, null); }
+  gl.activeTexture(gl.TEXTURE0);
   for (const k of keys) {
     t3d.bind();
     gl.clearColor(0, 0, 0, 1); gl.clearDepth(1);
@@ -233,6 +251,7 @@ window.__measure = () => {
       sky: SKY, lightVP: IDENTITY(), shadow: null, ao: null,
       screenSize: [W, H], draws,
     });
+    { const e = gl.getError(); if (e !== 0) out.litDrawGlError = { key: k, err: e }; }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, W, H);
     gl.disable(gl.DEPTH_TEST);
@@ -406,6 +425,12 @@ if (m.litRefusal) console.error('  lit path refused: ' + JSON.stringify(m.litRef
  * about tone-map drift for a reason that has nothing to do with the tone map, and the message
  * says "CPU says 214, the GPU wrote 218". Refuse instead, and name the cause here.
  */
+/* A refusal returned from the page is a fact about the shipped path (a shader that will not compile there will not
+   compile for a user either). Name it; do not let it surface as a TypeError three lines later. */
+if (m.refusal || m.litRefusal) {
+  console.error('REFUSED by the measured path:', JSON.stringify(m.refusal ?? m.litRefusal), 'glError:', JSON.stringify(m.litGlError ?? null), 'litCoverage:', JSON.stringify(m.litCoverage ?? null), 'litCentre:', JSON.stringify(m.litCentre ?? null), 'litDrawGlError:', JSON.stringify(m.litDrawGlError ?? null));
+  process.exit(1);
+}
 if (!m.hdr) {
   console.error(
     'REFUSED: EXT_color_buffer_float is absent, so the scene target is RGBA8 and the palette\n' +
@@ -426,7 +451,7 @@ const rows = {};
 for (const k of m.keys) {
   const t = target(hexes[k]);
   rows[k] = {};
-  for (const cfg of ['compositeOnly', 'asShipped', 'litMarker', 'litCentre']) {
+  for (const cfg of ['compositeOnly', 'asShipped', 'antialiased', 'litMarker', 'litCentre']) {
     const px = m[cfg]?.[k];
     if (!px) continue;
     rows[k][cfg] = {
@@ -439,7 +464,7 @@ for (const k of m.keys) {
     };
   }
 }
-for (const cfg of ['compositeOnly', 'asShipped', 'litMarker', 'litCentre']) {
+for (const cfg of ['compositeOnly', 'asShipped', 'antialiased', 'litMarker', 'litCentre']) {
   console.log(`\n── ${cfg}`);
   console.log('  key          target    on screen  Δr   Δg   Δb    ΔE76  ΔE2000');
   for (const k of m.keys) {

@@ -92,6 +92,13 @@ export function useReliefPreference(s: ReliefSurface): {
    */
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
+  // THE INSTRUMENT'S IN-PLACE GL-OFF (THE PRODUCTION P3): the visibility pair is two captures of ONE page load; this event
+  // turns every relief to its flat fallback without a reload. Nothing in the product dispatches it.
+  useEffect(() => {
+    const off = () => setWant(false);
+    window.addEventListener('lcx:gl-force-off', off);
+    return () => window.removeEventListener('lcx:gl-force-off', off);
+  }, []);
   const choose = useCallback((v: boolean) => {
     setWant(v);
     storage.set(keyFor(s), v);

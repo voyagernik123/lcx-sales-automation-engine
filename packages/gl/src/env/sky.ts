@@ -39,18 +39,40 @@ export const SKY_GLSL = `
 uniform vec3 uSkyZenith;
 uniform vec3 uSkyHorizon;
 uniform vec3 uSkyGround;
-vec3 skyColour(vec3 dir) {
+uniform sampler2D uEnvMap;
+uniform float uHasEnv;
+uniform float uEnvGain;
+vec3 skyProcedural(vec3 dir) {
   float h = clamp(dir.y, -1.0, 1.0);
   vec3 up = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.85, h));
   vec3 dn = mix(uSkyHorizon, uSkyGround, smoothstep(0.0, 0.55, -h));
   return h >= 0.0 ? up : dn;
-}`;
+}
+vec2 equirectUv(vec3 d) {
+  return vec2(atan(d.x, -d.z) / 6.28318530718 + 0.5, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.14159265359);
+}
+/* A REAL ROOM WHEN ONE IS BOUND (THE PRODUCTION, P3): an equirect studio rendered in Blender under the Standard
+   transform (sRGB-decoded on fetch), sampled at a LOD chosen by the caller — soft for diffuse irradiance, by roughness
+   for specular. The procedural three-stop sky remains the fallback and the default, so every caller written before
+   this existed is unchanged. */
+vec3 skyColourLod(vec3 dir, float lod) {
+  return uHasEnv > 0.5 ? textureLod(uEnvMap, equirectUv(normalize(dir)), lod).rgb * uEnvGain : skyProcedural(dir);
+}
+vec3 skyColour(vec3 dir) { return skyColourLod(dir, 0.0); }`;
 
 export interface SkyOptions {
   readonly zenith?: Vec3;
   readonly horizon?: Vec3;
   readonly ground?: Vec3;
+  /** An equirect environment (sRGB texture with mipmaps). When set, every sky sample reads it instead of the stops. */
+  readonly envMap?: WebGLTexture | null;
+  /** Multiplier on the environment sample (1 = as rendered). The stage uses it per theme to keep the frame inside the
+   *  luminance bounds the glass contrast proof assumes (`STAGE_LUMINANCE_MAX/MIN`). */
+  readonly envGain?: number;
 }
+
+/** The texture unit the environment map is bound to by `bindSky`. Kept clear of the lit pass's shadow/AO units. */
+export const ENV_MAP_UNIT = 7;
 
 /* A dark instrument interior, not a daylight sky. Cool above, a warmer bounce below — the
    horizon lift is what gives a metal an edge to catch. */
@@ -60,6 +82,24 @@ export const DEFAULT_SKY = {
   ground: [0.010, 0.011, 0.016] as Vec3,
 };
 
+/**
+ * Load an equirect environment image into a mipmapped sRGB texture. The image is authored sRGB (Standard transform),
+ * so `SRGB8_ALPHA8` makes every fetch linear — the same rule as the S7 objects: colour is decided from the bytes.
+ */
+export function uploadEnvironment(gl: WebGL2RenderingContext, image: TexImageSource): WebGLTexture {
+  const tex = gl.createTexture()!;
+  gl.activeTexture(gl.TEXTURE0 + ENV_MAP_UNIT);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.activeTexture(gl.TEXTURE0);
+  return tex;
+}
+
 /** Upload the sky uniforms to any program that includes `SKY_GLSL`. */
 export function bindSky(gl: WebGL2RenderingContext, program: WebGLProgram, sky: SkyOptions = {}): void {
   const z = sky.zenith ?? DEFAULT_SKY.zenith;
@@ -68,6 +108,11 @@ export function bindSky(gl: WebGL2RenderingContext, program: WebGLProgram, sky: 
   gl.uniform3f(gl.getUniformLocation(program, 'uSkyZenith'), z[0], z[1], z[2]);
   gl.uniform3f(gl.getUniformLocation(program, 'uSkyHorizon'), h[0], h[1], h[2]);
   gl.uniform3f(gl.getUniformLocation(program, 'uSkyGround'), g[0], g[1], g[2]);
+  const env = sky.envMap ?? null;
+  gl.uniform1f(gl.getUniformLocation(program, 'uHasEnv'), env ? 1 : 0);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEnvGain'), sky.envGain ?? 1);
+  gl.uniform1i(gl.getUniformLocation(program, 'uEnvMap'), ENV_MAP_UNIT);
+  if (env) { gl.activeTexture(gl.TEXTURE0 + ENV_MAP_UNIT); gl.bindTexture(gl.TEXTURE_2D, env); gl.activeTexture(gl.TEXTURE0); }
 }
 
 /*

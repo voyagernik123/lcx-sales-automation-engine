@@ -4,8 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AUTHORED_HEX } from '@lcx/gl/look/theme.js';
 import {
-  CHART_BEGIN, CHART_END, SCENERY_BEGIN, SCENERY_END, SCENERY_TOKENS,
-  pageColourHex, renderChartTwinBlock, renderSceneryBlock,
+  CHART_BEGIN, CHART_END, EDGE_BEGIN, EDGE_END, SCENERY_BEGIN, SCENERY_END, SCENERY_TOKENS,
+  pageColourHex, renderChartTwinBlock, renderEdgeBlock, renderSceneryBlock,
 } from '../sceneryTokens';
 
 /**
@@ -83,6 +83,11 @@ describe('one material — the DOM scenery IS the GL rig', () => {
     expect(twins, 'expected exactly two chart-twin blocks').toHaveLength(2);
     expect(twins[0]).toBe(renderChartTwinBlock('light'));
     expect(twins[1]).toBe(renderChartTwinBlock('dark'));
+    // THE EDGE MODEL (P3): the hairline alphas every card carries are the rig's keyGain and shadowStrength, generated.
+    const edges = spans(EDGE_BEGIN, EDGE_END);
+    expect(edges, 'expected exactly two edge blocks (:root, .dark)').toHaveLength(2);
+    expect(edges[0]).toBe(renderEdgeBlock('light'));
+    expect(edges[1]).toBe(renderEdgeBlock('dark'));
   });
 
   it('every derived token decodes to its GL field — the seam is zero, not "under 1.0"', () => {

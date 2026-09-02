@@ -13,7 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CHART_BEGIN, CHART_END, SCENERY_BEGIN, SCENERY_END,
-  pageColourHex, renderChartTwinBlock, renderSceneryBlock,
+  EDGE_BEGIN, EDGE_END, pageColourHex, renderChartTwinBlock, renderEdgeBlock, renderSceneryBlock,
 } from '../src/lib/sceneryTokens.js';
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,6 +36,7 @@ function replaceSpans(src: string, begin: string, end: string, bodies: readonly 
 let css = readFileSync(TOKENS, 'utf8');
 css = replaceSpans(css, SCENERY_BEGIN, SCENERY_END, [renderSceneryBlock('light'), renderSceneryBlock('dark')], 'scenery');
 css = replaceSpans(css, CHART_BEGIN, CHART_END, [renderChartTwinBlock('light'), renderChartTwinBlock('dark')], 'chart twin');
+css = replaceSpans(css, EDGE_BEGIN, EDGE_END, [renderEdgeBlock('light'), renderEdgeBlock('dark')], 'edge');
 writeFileSync(TOKENS, css);
 
 let html = readFileSync(INDEX, 'utf8');

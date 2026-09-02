@@ -218,6 +218,13 @@
   /* @generated scenery (chart twin) — see above. */
   --card-fill: #ffffff;        /* = plate — the chart block's hex twin of --card */
   /* @end generated scenery (chart twin) */
+
+  /* @generated edge — the rig's key lights every panel's edge; derived by scripts/gen-scenery-tokens.ts (THE PRODUCTION, P3). Do not edit. */
+  --edge-hi: 255 255 255;      /* the key's highlight, top-left hairline */
+  --edge-hi-a: 0.09;           /* = 0.04 + keyGain 1.6 × 0.03 */
+  --edge-lo: 9 14 27;          /* the key's shadow, bottom-right hairline */
+  --edge-lo-a: 0.18;           /* = 0.06 + shadowStrength 0.62 × 0.2 */
+  /* @end generated edge */
 }
 
 .dark {
@@ -237,6 +244,13 @@
   /* @generated scenery (chart twin) — see above. */
   --card-fill: #0e1628;        /* = plate — the chart block's hex twin of --card */
   /* @end generated scenery (chart twin) */
+
+  /* @generated edge — the rig's key lights every panel's edge; derived by scripts/gen-scenery-tokens.ts (THE PRODUCTION, P3). Do not edit. */
+  --edge-hi: 255 255 255;      /* the key's highlight, top-left hairline */
+  --edge-hi-a: 0.11;           /* = 0.04 + keyGain 2.3 × 0.03 */
+  --edge-lo: 0 0 0;            /* the key's shadow, bottom-right hairline */
+  --edge-lo-a: 0.23;           /* = 0.06 + shadowStrength 0.85 × 0.2 */
+  /* @end generated edge */
 }
 
 /* === elevation system (10x polish) === */

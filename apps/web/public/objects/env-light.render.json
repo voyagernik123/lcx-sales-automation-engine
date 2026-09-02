@@ -1,0 +1,46 @@
+{
+  "blender": "5.2.0 LTS",
+  "bytes": 1548479,
+  "display": "sRGB",
+  "encoded": {
+    "1x": {
+      "bytes": 3658,
+      "path": "apps/web/public/objects/env-light.webp",
+      "sha256_16": "20d1db61c58ac6fe",
+      "size": [
+        1024,
+        512
+      ]
+    },
+    "2x": {
+      "bytes": 9772,
+      "path": "apps/web/public/objects/env-light@2x.webp",
+      "sha256_16": "497d082127568e75",
+      "size": [
+        2048,
+        1024
+      ]
+    },
+    "budgetKb": 60,
+    "encoder": "PIL 11.3.0 libwebp",
+    "quality": 86,
+    "withinBudget": true
+  },
+  "engine": "CYCLES",
+  "exposure": 0.0,
+  "format": "PNG",
+  "gamma": 1.0,
+  "look": "None",
+  "purpose": "environment",
+  "resolution": [
+    2048,
+    1024
+  ],
+  "samples": 64,
+  "scale": 2.0,
+  "sha256_16": "f5d4094228d99ee2",
+  "source": "(built in memory: scripts/blender/env_studio.py)",
+  "theme": "light",
+  "transform": "Standard",
+  "transparent": false
+}
