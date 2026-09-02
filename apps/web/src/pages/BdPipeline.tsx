@@ -1,4 +1,6 @@
 import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
+import { Fig } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
 import { useNavigate } from 'react-router-dom';
 import { useFilterStore, useInspect } from '@/stores';
 import { useBdStore } from '@/stores/useBdStore';
@@ -150,6 +152,7 @@ export function BdPipeline() {
   /* ── Working set (paginated, filterable — unchanged contract) ── */
   const [leads, setLeads] = useState<QueueLead[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalAt, setTotalAt] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
   const abortRef = useRef<AbortController | null>(null);
@@ -182,6 +185,7 @@ export function BdPipeline() {
       if (!controller.signal.aborted) {
         setLeads(res.data.map(enrichRow));
         setTotal(res.meta.total);
+        setTotalAt(res.meta.timestamp ?? null);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
@@ -699,7 +703,8 @@ export function BdPipeline() {
         </p>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-micro text-grey font-mono num-tabular">{total.toLocaleString()} {tier === 'all' ? 'in universe' : 'leads'}</span>
+          {/* S6: the count is a figure — dated by the response's own instant, with its delta since the last arrival. */}
+          <Fig id={tier === 'all' ? 'sales.universe' : 'sales.leads'} address={chordFor('sales')} label={tier === 'all' ? 'in universe' : 'leads'} value={total} kind="int" source={{ at: totalAt, kind: 'record' }} className="border-t-0 px-0 py-0" />
 
           {/* Tier scope: the workable tracked core vs. the full 50k+ catalog. */}
           <div className="flex items-center rounded-full border border-line overflow-hidden shrink-0">

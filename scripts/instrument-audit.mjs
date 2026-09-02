@@ -40,6 +40,7 @@ import { spawn, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DESK_ROUTES, allDeskFixtures } from './instrument-fixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'apps/web');
@@ -50,6 +51,9 @@ const PORT = Number(process.env.INSTRUMENT_PORT ?? 5189);
 const BASE = `http://127.0.0.1:${PORT}`;
 const STATIC_ONLY = process.env.INSTRUMENT_STATIC_ONLY === '1';
 const ROUTE_FILTER = process.env.INSTRUMENT_ROUTES ? process.env.INSTRUMENT_ROUTES.split(',') : null;
+/* S6: answer the eight desk landings' own endpoints with deterministic fixtures (see instrument-fixtures.mjs), so
+   "figures in the first viewport" reads a POPULATED desk. Off by default — the no-API floor is the baseline. */
+const FIXTURES = process.env.INSTRUMENT_FIXTURES === '1';
 
 const HEAD = execSync('git rev-parse --short HEAD', { cwd: ROOT }).toString().trim();
 const RUN_AT = new Date().toISOString();
@@ -132,6 +136,14 @@ const seatInit = (s) => {
   localStorage.setItem('lcx_operator_email', s.email);
   localStorage.setItem('lcx_desk_passcode', 'audit-no-api');
   localStorage.setItem(`lcx-os:${s.email}:operator:v1`, JSON.stringify({ state: { operator: s.operator }, version: 3 }));
+};
+/* S6 fixture mode: the six kept reliefs default ON (reliefPreference.ts, cafb955), so under fixtures a desk
+   would mount its GL view and the DOM figures the density claim is about would leave the viewport. Seed the
+   operator's remembered choice OFF for all seven, in the app's own scoped-key form (`lcx-os:${email}:relief:${s}:v1`). */
+const reliefsOffInit = (s) => {
+  for (const r of ['deck', 'globe', 'pipeline', 'orrery', 'surface', 'vault', 'storm']) {
+    localStorage.setItem(`lcx-os:${s.email}:relief:${r}:v1`, JSON.stringify(false));
+  }
 };
 const themeSeed = (a) => {
   const env = JSON.stringify({ state: { sidebarCollapsed: false, darkMode: a.dark, evidenceDocked: false }, version: 0 });
@@ -373,9 +385,14 @@ async function captureRoute(browser, route, theme) {
   try {
     await page.addInitScript(FREEZE_ENV, { at: FROZEN_AT, seed: FROZEN_SEED });
     if (route.seated) await page.addInitScript(seatInit, SEAT);
+    if (FIXTURES && route.seated) await page.addInitScript(reliefsOffInit, SEAT);
     await page.addInitScript(themeSeed, { dark: theme === 'dark', scope: route.seated ? SEAT.email : 'anon' });
     await page.addInitScript(PROBE);
     await page.route('**/v1/**', (r) => r.abort('connectionrefused'));
+    if (FIXTURES && DESK_ROUTES.has(route.path)) {
+      // Registered AFTER the abort: Playwright gives later handlers priority, so the floor stays the floor.
+      for (const [glob, body] of allDeskFixtures(new Date(FROZEN_AT).toISOString())) await page.route(glob, (r) => r.fulfill(body()));
+    }
     await page.goto(BASE + route.probe, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     // The shell's own anchor for seated routes; the sign-in heading for /select; body otherwise.
     const anchor = route.seated ? page.getByText(/NOT LEGAL ADVICE/i).first() : page.locator('body');
@@ -473,7 +490,7 @@ async function main() {
   const reached = rt.filter((x) => x.dark?.reached === 'REACHED' && x.light?.reached === 'REACHED').length;
   const themeCorrect = rt.filter((x) => x.dark?.dark === true && x.light?.dark === false).length;
   const totals = {
-    head: HEAD, runAt: RUN_AT, frozenAt: new Date(FROZEN_AT).toISOString(),
+    head: HEAD, runAt: RUN_AT, fixtures: FIXTURES, frozenAt: new Date(FROZEN_AT).toISOString(),
     routes: routes.length,
     glRoutes: routes.filter((r) => r.static.gl).length + (shell.gl ? 0 : 0),
     shellCarriesGl: shell.gl,
@@ -514,7 +531,7 @@ function renderMd(t, shell, routes, runtime) {
   }).join('\n');
   const seam = t.seam.map((s) => `| ${s.theme} | \`${s.token}\` ${s.dom ?? '?'} | \`${s.glField}\` ${s.gl ?? '?'} | **${s.deltaE ?? 'unparsed'}**${s.designed ? ' _(designed offset — reported, not scored)_' : ''} |`).join('\n');
   const rtBlock = t.runtime ? `
-## Runtime (both themes, no API, frozen clock ${t.frozenAt})
+## Runtime (both themes, ${t.fixtures ? 'DESK FIXTURES ON for the eight landings, relief preferences seeded OFF — density there is a property of the DOM LAYOUT, not the data; every other route no API' : 'no API'}, frozen clock ${t.frozenAt})
 
 | | |
 |---|---|
@@ -526,7 +543,7 @@ function renderMd(t, shell, routes, runtime) {
 | max live \`setInterval\`s on one route | **${t.runtime.maxLiveIntervals}** |
 | routes running a rAF loop at rest (> 10 frames/s) | **${t.runtime.routesWithRafLoop}** |
 | routes that created a GL context | ${t.runtime.routesWithGlContext} |
-| median numeric figures in the first viewport | ${t.runtime.medianFiguresInViewport} |
+| median numeric figures in the first viewport | ${t.runtime.medianFiguresInViewport} |${t.fixtures ? `\n\n**Desk figures in the first viewport (dark / light), fixtures on:** ${routes.filter((r) => DESK_ROUTES.has(r.path)).map((r) => `\`${r.path}\` ${runtime[r.path]?.dark?.figures ?? '—'} / ${runtime[r.path]?.light?.figures ?? '—'}`).join(' · ')}` : ''}
 | routes with page errors | ${t.runtime.routesWithPageErrors} |
 ` : '\n## Runtime\n\n_static-only run — no captures._\n';
   return `# THE INSTRUMENT — baseline

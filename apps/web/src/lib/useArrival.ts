@@ -5,6 +5,7 @@ import { request } from '@/lib/apiClient';
 import { every, now } from '@/lib/clock';
 import { prefersReducedMotion } from '@/lib/motion';
 import { scopedKey } from '@/lib/persistence';
+import { rollover as rolloverFigMarks } from '@/lib/figMarks';
 import { useOperatorStore } from '@/stores';
 
 /**
@@ -92,6 +93,8 @@ export const useArrivalStore = create<ArrivalStore>((set, get) => ({
     try {
       const res = await request<{ data: WatchResponse }>(`/v1/watch?since=${encodeURIComponent(asked)}`, { auth: true });
       writeWatermark(operatorId, res.data.asOf);
+      // S6: every <Fig>'s current reading becomes its MARK at this arrival, so its delta answers "since I was away".
+      rolloverFigMarks();
       const reduced = prefersReducedMotion();
       set({
         watch: res.data,

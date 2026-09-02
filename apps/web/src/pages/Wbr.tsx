@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarClock, Download, RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle, ListChecks, Activity, Bot } from 'lucide-react';
+import { CalendarClock, Download, RefreshCw, TrendingUp, AlertTriangle, ListChecks, Activity, Bot } from 'lucide-react';
 import { fetchWbr, regenerateWbr, type WbrReport, type WbrMetric, type WbrSparkline, type GpsWbrDisposition } from '@/lib/api/wbr';
 import { wbrNarrative } from '@/lib/api/aiOperator';
 import { AiProse } from '@/components/ai/AiProse';
@@ -8,23 +8,14 @@ import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { clsx } from 'clsx';
+import { Fig, FigGrid } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
 
 /**
  * Weekly Business Review (Phase 4.1) — the auto-composed Monday review. Reads
  * the report the `wbr` job persists (or a live one before the first cron),
  * printable as-is. Fortune-500 operating rhythm, on the free-data stack.
  */
-function fmtMetric(v: number, unit: WbrMetric['unit']): string {
-  if (unit === 'usd_cents') return `$${Math.round(v / 100).toLocaleString('en-US')}`;
-  if (unit === 'pct') return `${v}%`;
-  return v.toLocaleString('en-US');
-}
-function fmtDelta(m: WbrMetric): string {
-  const s = m.delta > 0 ? '+' : '';
-  if (m.unit === 'usd_cents') return `${s}$${Math.round(m.delta / 100).toLocaleString('en-US')}`;
-  if (m.unit === 'pct') return `${s}${m.delta}%`;
-  return `${s}${m.delta.toLocaleString('en-US')}`;
-}
 
 export function Wbr() {
   const navigate = useNavigate();
@@ -131,10 +122,19 @@ export function Wbr() {
             )}
           </div>
 
+          {/* S6 · the review's own counts as dated figures, one row, before the groups */}
+          <FigGrid cols={6}>
+            <Fig id="governance.exceptions" address={chordFor('governance')} label="exceptions" value={report.exceptions.length} kind="int" source={{ at: report.generatedAt, kind: 'record' }} goodIsUp={false} />
+            <Fig id="governance.exceptions-critical" address={chordFor('governance')} label="critical" value={report.exceptions.filter((e) => e.severity === 'critical').length} kind="int" source={{ at: report.generatedAt, kind: 'record' }} goodIsUp={false} />
+            <Fig id="governance.commitments" address={chordFor('governance')} label="commitments carried" value={report.commitments.length} kind="int" source={{ at: report.generatedAt, kind: 'record' }} goodIsUp={false} />
+            <Fig id="governance.commitments-overdue" address={chordFor('governance')} label="overdue" value={report.commitments.filter((c) => c.overdue).length} kind="int" source={{ at: report.generatedAt, kind: 'record' }} goodIsUp={false} />
+            <Fig id="governance.inputs" address={chordFor('governance')} label="input metrics" value={report.inputs.length} kind="int" source={{ at: report.generatedAt, kind: 'record' }} />
+            <Fig id="governance.outputs" address={chordFor('governance')} label="output metrics" value={report.outputs.length} kind="int" source={{ at: report.generatedAt, kind: 'record' }} />
+          </FigGrid>
           {/* Inputs / Outputs */}
           <div className="grid gap-5 lg:grid-cols-2">
-            <MetricGroup title="Activity in" subtitle="What the desk controlled" metrics={report.inputs} />
-            <MetricGroup title="Results out" subtitle="What it produced, week-over-week" metrics={report.outputs} />
+            <MetricGroup title="Activity in" subtitle="What the desk controlled" metrics={report.inputs} at={report.generatedAt} />
+            <MetricGroup title="Results out" subtitle="What it produced, week-over-week" metrics={report.outputs} at={report.generatedAt} />
           </div>
 
           {/* Sparklines */}
@@ -297,35 +297,42 @@ function SectionHead({ icon, title }: { icon: React.ReactNode; title: string }) 
   );
 }
 
-function MetricGroup({ title, subtitle, metrics }: { title: string; subtitle: string; metrics: WbrMetric[] }) {
+function MetricGroup({ title, subtitle, metrics, at }: { title: string; subtitle: string; metrics: WbrMetric[]; at: string }) {
   return (
     <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card">
       <div className="mb-3">
         <h3 className="text-label font-bold text-navy">{title}</h3>
         <p className="text-micro text-grey">{subtitle}</p>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        {metrics.map((m) => <MetricCard key={m.key} m={m} />)}
-      </div>
+      <FigGrid cols={2}>
+        {metrics.map((m) => <MetricCard key={m.key} m={m} at={at} />)}
+      </FigGrid>
     </section>
   );
 }
 
-function MetricCard({ m }: { m: WbrMetric }) {
-  const good = m.delta === 0 ? null : (m.delta > 0) === m.higherIsBetter;
-  const Icon = m.delta === 0 ? Minus : m.delta > 0 ? TrendingUp : TrendingDown;
-  const tone = good === null ? 'text-grey' : good ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500';
+/**
+ * S6: a WBR metric is a `<Fig>` — the value in the review's own unit, dated by `generatedAt`, with the arrival
+ * delta AND the review's own week-over-week (`compare`), which are different questions and both answered.
+ * Money metrics arrive in cents and are shown in dollars, as `fmtMetric` always did.
+ */
+function MetricCard({ m, at }: { m: WbrMetric; at: string }) {
+  const kind = m.unit === 'usd_cents' ? 'money' : m.unit === 'pct' ? 'pct' : 'int';
+  const scale = m.unit === 'usd_cents' ? 1 / 100 : 1;
   return (
-    <div className="rounded border border-line/70 p-2.5">
-      <div className="text-micro text-grey">{m.label}</div>
-      <div className="mt-0.5 text-h3 font-bold tabular-nums text-navy">{fmtMetric(m.current, m.unit)}</div>
-      <div className={clsx('mt-0.5 flex items-center gap-1 text-micro font-semibold', tone)}>
-        <Icon size={11} /> {fmtDelta(m)} <span className="font-normal text-grey">{m.kind === 'flow' ? 'this week' : 'WoW'}</span>
-      </div>
-    </div>
+    <Fig
+      id={`governance.${m.key}`}
+      label={`${m.label} · ${m.kind === 'flow' ? 'this week' : 'stock'}`}
+      value={m.current * scale}
+      kind={kind}
+      currency="USD"
+      goodIsUp={m.higherIsBetter}
+      compare={{ value: m.previous * scale, label: m.kind === 'flow' ? 'vs last week' : 'WoW' }}
+      source={{ at, kind: 'record' }}
+      address={chordFor('governance')}
+    />
   );
 }
-
 function SparkCard({ spark }: { spark: WbrSparkline }) {
   const pts = spark.points;
   const max = Math.max(...pts, 1);

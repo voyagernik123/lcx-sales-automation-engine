@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
+import { Fig, FigGrid } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, MapPin, ShieldCheck, Coins, Terminal, ShieldAlert, LayoutDashboard } from 'lucide-react';
+import { AlertTriangle, Terminal, ShieldAlert, LayoutDashboard } from 'lucide-react';
 import { Card, CardHeader, CardBody, Badge, ReadinessMeter, InspectorDrawer, PageTitle } from '@/components/ui';
 import { StateInspectorPanel } from '@/components/shared';
 import { states, products, requirements, readinessItems, redFlags } from '@/data';
@@ -23,23 +25,6 @@ import { clsx } from 'clsx';
  * feed now shows only what the audit store actually recorded, and says so when that is
  * nothing.
  */
-
-function StatCard({ icon: Icon, label, value, hint }: { icon: React.ElementType; label: string; value: string | number; hint?: string }) {
-  return (
-    <Card>
-      <CardBody>
-        <div className="flex items-center gap-3">
-          <div className="rounded-md bg-ice-soft p-2 text-navy dark:bg-ice-soft/10"><Icon size={20} /></div>
-          <div>
-            <div className="text-2xl font-bold leading-none font-mono">{value}</div>
-            <div className="text-xs text-grey-dark mt-1">{label}</div>
-          </div>
-        </div>
-        {hint && <p className="mt-2 text-xs text-grey leading-tight">{hint}</p>}
-      </CardBody>
-    </Card>
-  );
-}
 
 export function Dashboard() {
   const { selectedStatuses, selectedPhases, clarityEnacted, spdiEquivalence } = useFilterStore();
@@ -143,12 +128,17 @@ export function Dashboard() {
 
         <div className="flex-1 flex flex-col space-y-4 min-h-0 overflow-y-auto pr-1">
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 shrink-0">
-            <StatCard icon={MapPin} label="Researched jurisdictions" value={`${researched.length} / ${states.length}`} hint="Remaining states are unresearched." />
-            <StatCard icon={ShieldCheck} label="Launchable States" value={readyOrConditional.length} hint="Phase 1 states, pending counsel sign-off." />
-            <StatCard icon={AlertTriangle} label="Blocked Requirements" value={blockers.length} hint="Active domain-level blocker gates." />
-            <StatCard icon={Coins} label="Listed Products" value={products.length} hint="Tokens, custody modules, and stablecoins." />
-          </div>
+          {/* S6 · the cockpit's counts as figures. The compiled research dataset (`@/data`) carries NO instant, so
+              every one of these reads "undated" — a true statement about the dataset, kept visible rather than
+              papered over with today's date. */}
+          <FigGrid cols={6} className="shrink-0">
+            <Fig id="regulatory.researched" address={chordFor('regulatory')} label="researched jurisdictions" value={researched.length} kind="int" source={{ at: null, kind: 'record' }} />
+            <Fig id="regulatory.jurisdictions" address={chordFor('regulatory')} label="jurisdictions in scope" value={states.length} kind="int" source={{ at: null, kind: 'record' }} />
+            <Fig id="regulatory.launchable" address={chordFor('regulatory')} label="launchable states" value={readyOrConditional.length} kind="int" source={{ at: null, kind: 'derived' }} />
+            <Fig id="regulatory.blockers" address={chordFor('regulatory')} label="blocked requirements" value={blockers.length} kind="int" source={{ at: null, kind: 'derived' }} goodIsUp={false} />
+            <Fig id="regulatory.products" address={chordFor('regulatory')} label="listed products" value={products.length} kind="int" source={{ at: null, kind: 'record' }} />
+            <Fig id="regulatory.coverage" address={chordFor('regulatory')} label="research coverage" value={states.length > 0 ? (researched.length / states.length) * 100 : null} kind="pct" source={{ at: null, kind: 'derived' }} />
+          </FigGrid>
 
           <Card className="shrink-0">
             <CardHeader className="text-xs uppercase tracking-wider font-extrabold text-grey">
@@ -169,7 +159,7 @@ export function Dashboard() {
                     >
                       <span className={`absolute top-0.5 right-0.5 h-[5px] w-[5px] rounded-full ${dotClass}`} />
                       <span>{s.abbreviation}</span>
-                      <span className="text-[9px] tracking-tight font-normal opacity-75">{s.phase.replace('Phase ', 'P')}</span>
+                      <span className="text-micro tracking-tight font-normal opacity-75">{s.phase.replace('Phase ', 'P')}</span>
                     </button>
                   );
                 })}
@@ -277,7 +267,7 @@ export function Dashboard() {
             <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-cyan-500 shrink-0" />
-                <span className="uppercase text-[9px] font-bold text-cyan-400">Live Operation Feed</span>
+                <span className="uppercase text-micro font-bold text-cyan-400">Live Operation Feed</span>
               </div>
               <Terminal size={12} className="text-slate-500" />
             </div>
@@ -300,9 +290,9 @@ export function Dashboard() {
                   log.category === 'Scenario' ? 'text-amber-400 border-amber-500/30' :
                   log.category === 'System' ? 'text-purple-400 border-purple-500/30' : 'text-slate-400';
                 return (
-                  <div key={index} className="text-slate-300 break-words font-mono text-[9px] flex gap-1.5 items-start">
+                  <div key={index} className="text-slate-300 break-words font-mono text-micro flex gap-1.5 items-start">
                     <span className="text-slate-600 shrink-0 select-none">[{log.timestamp}]</span>
-                    <span className={clsx('px-1 py-0.5 rounded text-[7px] uppercase font-bold shrink-0 leading-none bg-slate-900 border', catColor)}>
+                    <span className={clsx('px-1 py-0.5 rounded text-micro uppercase font-bold shrink-0 leading-none bg-slate-900 border', catColor)}>
                       {log.category}
                     </span>
                     <span className="text-slate-100 font-bold">

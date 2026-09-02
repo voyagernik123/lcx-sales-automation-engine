@@ -1,4 +1,6 @@
 import { AiProse } from '@/components/ai/AiProse';
+import { Fig, FigGrid } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Command, RefreshCw, AlertTriangle, Rocket, Layers, Users, ShieldAlert,
@@ -135,14 +137,24 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
       <ReadinessDial />
 
       {/* Counts strip */}
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-        <Stat label="Products" value={o.counts.products} />
-        <Stat label="Partners" value={o.counts.partners} />
-        <Stat label="Workstreams" value={o.counts.workstreams} />
-        <Stat label="Tasks" value={o.counts.tasks} />
-        <Stat label="Open decisions" value={o.decisions.open} tone="warn" />
-        <Stat label="Risks" value={o.counts.risks} tone={o.topRisks.some((r) => r.impact === 'Critical') ? 'bad' : undefined} />
-      </div>
+      {/* S6 · the counts strip as figures — dated by the overview's own `generatedAt`, each with its delta since
+          the operator's last arrival, each one keystroke away. */}
+      <FigGrid cols={6}>
+        <Fig id="command.products" address={chordFor('command')} label="products" value={o.counts.products} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.partners" address={chordFor('command')} label="partners" value={o.counts.partners} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.workstreams" address={chordFor('command')} label="workstreams" value={o.counts.workstreams} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.tasks" address={chordFor('command')} label="tasks" value={o.counts.tasks} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.decisions-open" address={chordFor('command')} label="open decisions" value={o.decisions.open} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} />
+        <Fig id="command.risks" address={chordFor('command')} label={o.topRisks.some((r) => r.impact === 'Critical') ? 'risks · critical present' : 'risks'} value={o.counts.risks} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} />
+      </FigGrid>
+      <FigGrid cols={6} className="mt-1">
+        <Fig id="command.gating-done" address={chordFor('command')} label="gates passed" value={o.launch.gatingDone} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.gating-total" address={chordFor('command')} label="gates total" value={o.launch.gatingTotal} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.gating-pct" address={chordFor('command')} label="gating complete" value={o.launch.gatingTotal > 0 ? (o.launch.gatingDone / o.launch.gatingTotal) * 100 : null} kind="pct" source={{ at: o.generatedAt, kind: 'derived' }} />
+        <Fig id="command.decisions-total" address={chordFor('command')} label="decisions recorded" value={o.decisions.total} kind="int" source={{ at: o.generatedAt, kind: 'record' }} />
+        <Fig id="command.targets-unconfirmed" address={chordFor('command')} label="unconfirmed targets" value={o.gaps.unconfirmedTargets} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} />
+        <Fig id="command.assumptions" address={chordFor('command')} label="planning assumptions" value={o.gaps.planningAssumptions} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} />
+      </FigGrid>
 
       {/* E1 THE THEATRE — RETIRED 2026-09-02 (INSTRUMENT_100X_PLAN S5, §3.1). The GL room that wrapped
           this deck carried depth ORDER only — the sequence the flat deck below already carries as a list —
@@ -266,7 +278,7 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
               <div key={f.id} className="flex items-center gap-2 text-micro">
                 <span className="min-w-0 flex-1 truncate text-grey-dark">{f.item}</span>
                 <span className="shrink-0 font-mono text-navy">{f.value}{f.unit && f.unit !== 'model' ? ` ${f.unit}` : ''}</span>
-                {f.assumption && <span className="shrink-0 rounded bg-amber-500/10 px-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">assumption</span>}
+                {f.assumption && <span className="shrink-0 rounded bg-amber-500/10 px-1 text-micro font-semibold text-amber-600 dark:text-amber-400">assumption</span>}
               </div>
             ))}
           </div>
@@ -275,10 +287,10 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
         {/* Data gaps — the non-fabrication ledger */}
         <Panel icon={<HelpCircle size={13} />} title="Data gaps (nothing fabricated)">
           <div className="mb-2 grid grid-cols-2 gap-2">
-            <GapStat label="Partners missing contact" value={o.gaps.partnersMissingContact} />
-            <GapStat label="Partners missing terms" value={o.gaps.partnersMissingTerms} />
-            <GapStat label="Planning assumptions" value={o.gaps.planningAssumptions} />
-            <GapStat label="Unconfirmed targets" value={o.gaps.unconfirmedTargets} />
+            <Fig id="command.gap-partners-contact" address={chordFor('command')} label="partners missing contact" value={o.gaps.partnersMissingContact} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} className="border-t-0" />
+            <Fig id="command.gap-partners-terms" address={chordFor('command')} label="partners missing terms" value={o.gaps.partnersMissingTerms} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} className="border-t-0" />
+            <Fig id="command.gap-assumptions" address={chordFor('command')} label="planning assumptions" value={o.gaps.planningAssumptions} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} className="border-t-0" />
+            <Fig id="command.gap-targets" address={chordFor('command')} label="unconfirmed targets" value={o.gaps.unconfirmedTargets} kind="int" source={{ at: o.generatedAt, kind: 'record' }} goodIsUp={false} className="border-t-0" />
           </div>
           <ul className="space-y-0.5">
             {o.gaps.notes.map((note, i) => (
@@ -300,23 +312,7 @@ function Panel({ icon, title, children }: { icon: React.ReactNode; title: string
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: 'warn' | 'bad' }) {
-  return (
-    <div className="rounded-lg border border-line bg-card p-2.5 shadow-card">
-      <div className="text-micro text-grey">{label}</div>
-      <div className={clsx('text-h3 font-bold tabular-nums', tone === 'bad' ? 'text-red-600 dark:text-red-400' : tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : 'text-navy')}>{value}</div>
-    </div>
-  );
-}
 
-function GapStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded border border-line/70 p-2">
-      <div className="text-h3 font-bold tabular-nums text-navy">{value}</div>
-      <div className="text-micro text-grey">{label}</div>
-    </div>
-  );
-}
 
 /** Likelihood × impact grid. */
 function RiskHeat({ risks }: { risks: CommandRisk[] }) {
@@ -345,7 +341,7 @@ function RiskHeat({ risks }: { risks: CommandRisk[] }) {
           ))}
         </tbody>
       </table>
-      <div className="mt-1 flex justify-between px-1 text-[10px] text-grey"><span>← likelihood</span><span>impact →</span></div>
+      <div className="mt-1 flex justify-between px-1 text-micro text-grey"><span>← likelihood</span><span>impact →</span></div>
     </div>
   );
 }
@@ -395,7 +391,7 @@ function CriticalPath({ tasks, onChange }: { tasks: CommandTask[]; onChange: () 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-label font-semibold text-navy">{t.title}</span>
-              {(indeg.get(t.id) ?? 0) >= 2 && <span className="shrink-0 rounded bg-cyan-500/10 px-1 text-[10px] font-bold text-cyan-700 dark:text-cyan-300">unblocks {indeg.get(t.id)}</span>}
+              {(indeg.get(t.id) ?? 0) >= 2 && <span className="shrink-0 rounded bg-cyan-500/10 px-1 text-micro font-bold text-cyan-700 dark:text-cyan-300">unblocks {indeg.get(t.id)}</span>}
             </div>
             {t.depends_on.length > 0 && (
               <div className="mt-0.5 text-micro text-grey">needs: {t.depends_on.map((d) => byId.get(d)?.title ?? d).join(' · ')}</div>
@@ -412,7 +408,7 @@ function CriticalPath({ tasks, onChange }: { tasks: CommandTask[]; onChange: () 
           </select>
         </div>
       ))}
-      <p className="text-[10px] text-grey">Status changes run through the governed action registry — audited, attributed.</p>
+      <p className="text-micro text-grey">Status changes run through the governed action registry — audited, attributed.</p>
     </div>
   );
 }
@@ -691,7 +687,7 @@ function CompressionList({ sim }: { sim: LaunchSim }) {
           {finished.length > 4 ? ' …' : ''}
         </p>
       )}
-      <p className="mt-1 text-[10px] text-grey">
+      <p className="mt-1 text-micro text-grey">
         Finite {step}-day compression, mean ± standard error.{' '}
         {runsLo != null && runsHi != null
           ? runsLo === runsHi
@@ -756,7 +752,7 @@ function LaunchSimPanel() {
           </div>
           <CompressionList sim={sim} />
           {sim.warnings.length > 0 && <p className="mt-2 text-micro text-amber-600 dark:text-amber-400">⚠ {sim.warnings.join(' · ')}</p>}
-          <p className="mt-2 text-[10px] text-grey">{sim.disclaimer} {sim.runs.toLocaleString()} runs, seeded.</p>
+          <p className="mt-2 text-micro text-grey">{sim.disclaimer} {sim.runs.toLocaleString()} runs, seeded.</p>
         </>
       )}
     </Panel>
@@ -807,14 +803,14 @@ function AskProgramPanel() {
                    renders the chip as plain text — not-navigable is the honest state,
                    and safeHref returns that same undefined for a hostile scheme. */
                 <a key={s.id} href={safeHref(s.url)} target="_blank" rel="noreferrer"
-                  className="rounded border border-cyan-500/40 bg-cyan-500/5 px-1.5 py-0.5 font-mono text-[10px] font-bold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300"
+                  className="rounded border border-cyan-500/40 bg-cyan-500/5 px-1.5 py-0.5 font-mono text-micro font-bold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300"
                   title={s.label}>
                   {s.id}
                 </a>
               ))}
             </div>
           )}
-          <p className="mt-1.5 text-[10px] text-grey">
+          <p className="mt-1.5 text-micro text-grey">
             Grounded in the command graph + deep ontology + planning simulation{res.usedLlm ? ' · AI-composed, source-cited' : ' · deterministic readout (no AI answer; this engine does not report the cause)'}
           </p>
         </div>

@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fig, FigGrid } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
+import { now } from '@/lib/clock';
 import { Globe, ShieldAlert, ShieldCheck, Send, Ban, CircleDollarSign, ListChecks } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
@@ -70,6 +73,8 @@ import type { GpsClient } from '@lcx/shared';
  */
 export function Gps() {
   const [summary, setSummary] = useState<GpsSummary | null>(null);
+  // The summary is computed when asked: its honest instant is the moment it arrived (S6).
+  const [summaryAt, setSummaryAt] = useState<string | null>(null);
   const [clients, setClients] = useState<GpsClient[] | null>(null);
   const [engagements, setEngagements] = useState<GpsEngagementRow[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -77,7 +82,7 @@ export function Gps() {
   const refresh = useCallback(() => {
     setErr(null);
     void Promise.all([fetchGpsSummary(), fetchGpsClients(), fetchGpsEngagements()])
-      .then(([s, c, e]) => { setSummary(s); setClients(c); setEngagements(e); })
+      .then(([s, c, e]) => { setSummary(s); setSummaryAt(new Date(now()).toISOString()); setClients(c); setEngagements(e); })
       .catch(setErr);
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
@@ -111,7 +116,7 @@ export function Gps() {
           the environment. */}
       <GpsMetaBanner of={[summary, clients, engagements]} />
 
-      {summary && summary.migrated && <SummaryStrip s={summary} />}
+      {summary && summary.migrated && <SummaryStrip s={summary} at={summaryAt} />}
 
       <CatalogueGaps todos={CATALOGUE_TODOS} />
 
@@ -202,7 +207,7 @@ function MigrationBanner() {
  * dominant currency's figures and says how many others exist rather than adding
  * them up.
  */
-function SummaryStrip({ s }: { s: GpsSummary }) {
+function SummaryStrip({ s, at }: { s: GpsSummary; at: string | null }) {
   const live = Object.entries(s.engagements.byStatus)
     .filter(([k]) => !isTerminalEngagementStatus(k as EngagementStatus))
     .reduce((n, [, v]) => n + (v ?? 0), 0);
@@ -215,21 +220,28 @@ function SummaryStrip({ s }: { s: GpsSummary }) {
   const gaps = s.gaps;
 
   return (
-    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <Stat label="Live engagements" value={String(live)} />
-      <Stat label="Clients" value={String(s.clients.total)} />
-      <Stat
-        label={open ? `Open value (${open.currency})` : 'Open value'}
-        value={open ? formatMoney(open.priceCents / 100) : '—'}
-        hint={others > 0 ? `+${others} other ${others === 1 ? 'currency' : 'currencies'}` : undefined}
-      />
-      {/* Margin, not revenue, is the number that decides whether this business
-          works — partners deliver, so revenue with an unknown cost is noise. */}
-      <Stat
-        label={pct == null ? 'Open margin' : `Open margin (${pct}%)`}
-        value={open ? formatMoney(open.marginCents / 100) : '—'}
-        tone={open && open.marginCents < 0 ? 'bad' : undefined}
-      />
+    <div className="mt-4">
+      {/* S6 · the book as a terminal: every figure dated by the instant the summary was computed, with its delta
+          since the operator's last arrival. Money is per CURRENCY — the largest open currency is shown and the
+          others are counted, never summed into a total that is true in none of them. */}
+      <FigGrid cols={6}>
+        <Fig id="gps.live" address={chordFor('gps')} label="live engagements" value={live} kind="int" source={{ at, kind: 'derived' }} />
+        <Fig id="gps.clients" address={chordFor('gps')} label="clients" value={s.clients.total} kind="int" source={{ at, kind: 'derived' }} />
+        <Fig id="gps.engagements" address={chordFor('gps')} label="engagements, all statuses" value={s.engagements.total} kind="int" source={{ at, kind: 'derived' }} />
+        <Fig id="gps.open-value" address={chordFor('gps')} label={open ? `open value · ${open.currency}${others > 0 ? ` (+${others} other)` : ''}` : 'open value'} value={open ? open.priceCents / 100 : null} kind="money" currency={open?.currency ?? 'USD'} source={{ at, kind: 'derived' }} hero />
+        {/* Margin, not revenue, is the number that decides whether this business
+            works — partners deliver, so revenue with an unknown cost is noise. */}
+        <Fig id="gps.open-margin" address={chordFor('gps')} label={pct == null ? 'open margin' : `open margin · ${pct}%`} value={open ? open.marginCents / 100 : null} kind="money" currency={open?.currency ?? 'USD'} source={{ at, kind: 'derived' }} />
+        <Fig id="gps.open-vendor-cost" address={chordFor('gps')} label="open vendor cost" value={open ? open.vendorCostCents / 100 : null} kind="money" currency={open?.currency ?? 'USD'} source={{ at, kind: 'derived' }} goodIsUp={false} />
+      </FigGrid>
+      <FigGrid cols={6} className="mt-1">
+        <Fig id="gps.collected" address={chordFor('gps')} label={s.collectedByCurrency[0] ? `collected · ${s.collectedByCurrency[0].currency}` : 'collected'} value={s.collectedByCurrency[0] ? s.collectedByCurrency[0].priceCents / 100 : null} kind="money" currency={s.collectedByCurrency[0]?.currency ?? 'USD'} source={{ at, kind: 'derived' }} />
+        <Fig id="gps.awaiting-deposit" address={chordFor('gps')} label="awaiting deposit" value={s.awaitingDeposit.count} kind="int" source={{ at, kind: 'derived' }} goodIsUp={false} />
+        <Fig id="gps.oldest-accepted" address={chordFor('gps')} label="oldest accepted, unpaid" value={s.awaitingDeposit.oldestAcceptedDays === null ? null : s.awaitingDeposit.oldestAcceptedDays * 1440} kind="duration" source={{ at, kind: 'derived' }} goodIsUp={false} />
+        <Fig id="gps.gap-conflict" address={chordFor('gps')} label="no conflict check" value={s.gaps.missingConflictCheck} kind="int" source={{ at, kind: 'derived' }} goodIsUp={false} />
+        <Fig id="gps.gap-unpriced" address={chordFor('gps')} label="unpriced" value={s.gaps.unpriced} kind="int" source={{ at, kind: 'derived' }} goodIsUp={false} />
+        <Fig id="gps.gap-unstaffable" address={chordFor('gps')} label="unstaffable" value={s.gaps.unstaffable} kind="int" source={{ at, kind: 'derived' }} goodIsUp={false} />
+      </FigGrid>
 
       {/* Surfaced as a first-class number rather than buried in a detail view:
           a proposal issued with no recorded conflict check is the one failure an
@@ -262,20 +274,6 @@ function SummaryStrip({ s }: { s: GpsSummary }) {
   );
 }
 
-function Stat({
-  label, value, tone, hint,
-}: { label: string; value: string; tone?: 'bad'; hint?: string }) {
-  return (
-    <div className="rounded-lg border border-line bg-card p-3">
-      <div className="font-mono text-[10px] uppercase tracking-wider text-grey">{label}</div>
-      <div className={clsx('mt-1 text-[22px] font-bold tabular-nums',
-        tone === 'bad' ? 'text-status-blocked' : 'text-navy')}>{value}</div>
-      {/* Says "there is money in other currencies" without adding currencies
-          together, which would state a total that is true in none of them. */}
-      {hint && <div className="mt-0.5 font-mono text-[10px] text-grey">{hint}</div>}
-    </div>
-  );
-}
 
 /**
  * WHAT THE CATALOGUE IS STILL MISSING, shown rather than commented.
@@ -534,7 +532,7 @@ function MarginReadout({ priceCents, vendorCents }: { priceCents: number | null;
       className={clsx('mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded border px-3 py-2',
         bad ? 'border-status-blocked/40 bg-status-blocked-bg' : 'border-line bg-ice-soft/40 dark:bg-ice-soft/5')}
     >
-      <span className="font-mono text-[10px] uppercase tracking-wider text-grey">Margin</span>
+      <span className="font-mono text-micro uppercase tracking-wider text-grey">Margin</span>
       <span className={clsx('text-[22px] font-bold tabular-nums', bad ? 'text-status-blocked' : 'text-navy')}>
         {money(m)}
       </span>
@@ -604,7 +602,7 @@ function ScopeList({ title, items, tone, note }: {
 }) {
   return (
     <div>
-      <div className={clsx('font-mono text-[10px] font-bold uppercase tracking-wider',
+      <div className={clsx('font-mono text-micro font-bold uppercase tracking-wider',
         tone === 'exclusion' ? 'text-status-blocked' : 'text-grey')}>{title}</div>
       <ul className="mt-1 space-y-1">
         {items.map((it) => (
@@ -912,7 +910,7 @@ function EngagementCard({ row, onChanged, enabled, jurisdiction, reads, inspecti
 function Figure({ label, value, tone }: { label: string; value: string; tone?: 'bad' | 'warn' }) {
   return (
     <span className="inline-flex flex-col">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-grey">{label}</span>
+      <span className="font-mono text-micro uppercase tracking-wider text-grey">{label}</span>
       <span className={clsx('text-label font-bold tabular-nums',
         tone === 'bad' ? 'text-status-blocked'
           : tone === 'warn' ? 'text-status-conditional' : 'text-navy')}>{value}</span>
@@ -966,7 +964,7 @@ function ConflictForm({ engagementId, onRecorded, disabled }: {
   const cls = 'w-full rounded border border-line bg-card px-2.5 py-2 text-label text-navy focus-ring';
   return (
     <div className="mt-3 rounded-lg border border-status-blocked/40 bg-status-blocked-bg/40 p-3">
-      <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-status-blocked">
+      <div className="flex items-center gap-1.5 font-mono text-micro font-bold uppercase tracking-wider text-status-blocked">
         <ShieldAlert size={12} /> Conflict check required before issuing
       </div>
       <p className="mt-1 text-micro text-grey">

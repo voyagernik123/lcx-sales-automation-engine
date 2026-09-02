@@ -1,0 +1,205 @@
+{
+  "totals": {
+    "head": "6b2f0dc",
+    "runAt": "2026-09-02T01:30:14.198Z",
+    "fixtures": true,
+    "frozenAt": "2026-09-21T07:18:41.000Z",
+    "routes": 1,
+    "glRoutes": 0,
+    "shellCarriesGl": false,
+    "ambient": 6,
+    "ambientBy": {
+      "animate-slide-in": 2,
+      "animate-pulse": 2,
+      "animate-spin": 2
+    },
+    "feelFiles": 0,
+    "timerCallSites": 8,
+    "clockReadCallSites": 29,
+    "continuityCallSites": 1,
+    "hexLiteralsOutsideTokens": 0,
+    "filesInUnion": 93,
+    "seam": [
+      {
+        "theme": "light",
+        "token": "--page-bg",
+        "dom": "#F4F7FC",
+        "glField": "page",
+        "gl": "#F4F7FC",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--card",
+        "dom": "#FFFFFF",
+        "glField": "plate",
+        "gl": "#FFFFFF",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--line",
+        "dom": "#B9C6E0",
+        "glField": "rule",
+        "gl": "#B9C6E0",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--page-bg",
+        "dom": "#F4F7FC",
+        "glField": "ground",
+        "gl": "#E8EDF6",
+        "deltaE": 2.81,
+        "designed": true
+      },
+      {
+        "theme": "dark",
+        "token": "--page-bg",
+        "dom": "#090E1B",
+        "glField": "page",
+        "gl": "#090E1B",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--card",
+        "dom": "#0E1628",
+        "glField": "plate",
+        "gl": "#0E1628",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--line",
+        "dom": "#26355A",
+        "glField": "rule",
+        "gl": "#26355A",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--page-bg",
+        "dom": "#090E1B",
+        "glField": "ground",
+        "gl": "#070B14",
+        "deltaE": 3.09,
+        "designed": true
+      }
+    ],
+    "seamMaxDeltaE": 0,
+    "runtime": {
+      "captured": 1,
+      "reachedBothThemes": 1,
+      "themeAppliedCorrectly": 1,
+      "routesWithContinuity": 1,
+      "routesWithMotionAtRest": 0,
+      "maxLiveIntervals": 2,
+      "routesWithRafLoop": 0,
+      "routesWithGlContext": 0,
+      "medianFiguresInViewport": 8,
+      "routesWithPageErrors": 0
+    }
+  },
+  "shell": {
+    "files": 66,
+    "ambient": 4,
+    "ambientBy": {
+      "animate-slide-in": 2,
+      "animate-pulse": 2
+    },
+    "feelFiles": 0,
+    "timers": 7,
+    "clockReads": 28,
+    "continuity": 1,
+    "hexLiterals": 0,
+    "gl": false,
+    "glFiles": []
+  },
+  "routes": [
+    {
+      "path": "/marketing",
+      "probe": "/marketing",
+      "module": "pages/Marketing",
+      "seated": true,
+      "static": {
+        "files": 27,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 8,
+          "textNodes": 105,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing-dark.png"
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "rafPerSecond": 0,
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 8,
+          "gl": 0,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 8,
+          "textNodes": 105,
+          "canvases": 0,
+          "title": "LCXOS",
+          "nav": {
+            "linkCount": 10,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "marketing-light.png"
+        }
+      }
+    }
+  ]
+}

@@ -12,6 +12,7 @@
  * states/products/redFlags stay resident regardless.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { figPaletteItems } from '@/components/fig/figAddress';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -112,6 +113,8 @@ export const PAGE_COMMANDS: CommandItem[] = [
   ...HAND_LISTED_PAGES,
   ...MARKETING_PALETTE_PAGES,
   ...GPS_PALETTE_PAGES,
+  // S6 · every registered desk figure is one keystroke away: "go to figure" rows from components/fig/figAddress.ts.
+  ...figPaletteItems(),
 ];
 
 /**

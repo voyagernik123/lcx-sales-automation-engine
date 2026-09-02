@@ -8,6 +8,9 @@ import { Button, PageTitle } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 import { AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
+import { Fig, FigGrid } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
+import { now } from '@/lib/clock';
 
 /**
  * Command Center (Wave 5) — the operational picture + the portfolio lens. Fuses
@@ -27,6 +30,9 @@ export function CommandCenter() {
   const [pf, setPf] = useState<Portfolio | null>(null);
   const [fc, setFc] = useState<Forecast | null>(null);
   const [slo, setSlo] = useState<SloReport | null>(null);
+  // Portfolio and forecast are computed when asked: their honest instant is the moment each arrived.
+  const [pfAt, setPfAt] = useState<string | null>(null);
+  const [fcAt, setFcAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -34,8 +40,8 @@ export function CommandCenter() {
     setPf(null);
     setFc(null);
     setSlo(null);
-    fetchPortfolio().then(setPf).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
-    fetchForecast().then(setFc).catch(() => setFc(null));
+    fetchPortfolio().then((p) => { setPf(p); setPfAt(new Date(now()).toISOString()); }).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
+    fetchForecast().then((f) => { setFc(f); setFcAt(new Date(now()).toISOString()); }).catch(() => setFc(null));
     fetchSlos().then(setSlo).catch(() => setSlo(null));
   }, []);
   useEffect(load, [load]);
@@ -81,16 +87,41 @@ export function CommandCenter() {
             </button>
           )}
 
-          {/* Operational picture strip */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <Tile label="Targetable universe" value={pf.totalTargets.toLocaleString()} onClick={() => navigate('/targets')} />
-            <Tile label="Universe EV" value={formatMoney(pf.totalEvUsd)} accent />
-            <Tile label="Avg conviction" value={String(pf.avgConviction)} />
-            <Tile label="Open pipeline" value={formatMoney(pf.pipeline.openValueUsd)} onClick={() => navigate('/deal-board')} />
-            <Tile label="Forecast (P50)" value={fc ? formatMoney(fc.p50) : '—'} onClick={() => navigate('/forecast')} />
-            <Tile label="Top-20 concentration" value={`${pf.concentration.top20Share}%`} tone={concentrated ? 'warn' : undefined} />
-          </div>
-
+          {/* S6 · the operational picture as a terminal: every figure dated, with its delta since the last arrival */}
+          <FigGrid cols={6}>
+            <Fig id="intel.universe" address={chordFor('intel')} label="targetable universe" value={pf.totalTargets} kind="int" source={{ at: pfAt, kind: 'derived' }} onClick={() => navigate('/targets')} />
+            <Fig id="intel.universe-ev" address={chordFor('intel')} label="universe EV" value={pf.totalEvUsd} kind="money" source={{ at: pfAt, kind: 'derived' }} hero />
+            <Fig id="intel.conviction" address={chordFor('intel')} label="avg conviction" value={pf.avgConviction} kind="ratio" source={{ at: pfAt, kind: 'derived' }} />
+            <Fig id="intel.open-pipeline" address={chordFor('intel')} label="open pipeline" value={pf.pipeline.openValueUsd} kind="money" source={{ at: pfAt, kind: 'derived' }} onClick={() => navigate('/deal-board')} />
+            <Fig id="intel.open-deals" address={chordFor('intel')} label="open deals" value={pf.pipeline.openDeals} kind="int" source={{ at: pfAt, kind: 'derived' }} onClick={() => navigate('/deal-board')} />
+            <Fig id="intel.top20" address={chordFor('intel')} label="top-20 concentration" value={pf.concentration.top20Share} kind="pct" source={{ at: pfAt, kind: 'derived' }} goodIsUp={false} />
+          </FigGrid>
+          <FigGrid cols={6} className="mt-1">
+            <Fig id="intel.forecast-p50" address={chordFor('intel')} label="forecast P50" value={fc?.p50 ?? null} kind="money" source={{ at: fcAt, kind: 'estimate' }} onClick={() => navigate('/forecast')} />
+            <Fig id="intel.forecast-p10" address={chordFor('intel')} label="forecast P10" value={fc?.p10 ?? null} kind="money" source={{ at: fcAt, kind: 'estimate' }} />
+            <Fig id="intel.forecast-p90" address={chordFor('intel')} label="forecast P90" value={fc?.p90 ?? null} kind="money" source={{ at: fcAt, kind: 'estimate' }} />
+            <Fig id="intel.forecast-expected" address={chordFor('intel')} label="forecast expected" value={fc?.expected ?? null} kind="money" source={{ at: fcAt, kind: 'estimate' }} />
+            <Fig id="intel.forecast-runs" address={chordFor('intel')} label="simulation runs" value={fc?.runs ?? null} kind="int" source={{ at: fcAt, kind: 'estimate' }} />
+            <Fig id="intel.top20-ev" address={chordFor('intel')} label="top-20 EV" value={pf.concentration.top20EvUsd} kind="money" source={{ at: pfAt, kind: 'derived' }} />
+          </FigGrid>
+          {slo && (
+            <FigGrid cols={slo.slos.length >= 3 ? 3 : 2} className="mt-1">
+              {slo.slos.map((s) => (
+                <Fig
+                  key={s.key}
+                  id={`intel.slo-${s.key}`}
+                  address={chordFor('intel')}
+                  label={`SLO · ${s.label}`}
+                  value={s.current}
+                  kind={s.unit === 'pct' ? 'pct' : s.unit === 'ms' ? 'int' : 'ratio'}
+                  goodIsUp={s.higherIsBetter}
+                  compare={{ value: s.target, label: 'vs target' }}
+                  source={{ at: slo.generatedAt, kind: 'record' }}
+                  onClick={() => navigate('/ops')}
+                />
+              ))}
+            </FigGrid>
+          )}
           {/* Concentration read */}
           <div className="rounded-lg border border-line bg-card p-3 text-label text-grey shadow-card">
             <span className="font-semibold text-navy">Portfolio read:</span>{' '}
@@ -109,19 +140,6 @@ export function CommandCenter() {
         </div>
       )}
     </div>
-  );
-}
-
-function Tile({ label, value, accent, tone, onClick }: { label: string; value: string; accent?: boolean; tone?: 'warn'; onClick?: () => void }) {
-  const Comp = onClick ? 'button' : 'div';
-  return (
-    <Comp
-      onClick={onClick}
-      className={`rounded-lg border border-line bg-card p-3 text-left shadow-card ${onClick ? 'transition-colors hover:border-cyan-400' : ''}`}
-    >
-      <div className="text-[9px] font-bold uppercase tracking-wider text-grey">{label}</div>
-      <div className={`num-tabular mt-0.5 text-lg font-bold ${accent ? 'text-cyan-700 dark:text-cyan-300' : tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : 'text-navy'}`}>{value}</div>
-    </Comp>
   );
 }
 

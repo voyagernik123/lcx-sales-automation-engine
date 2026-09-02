@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
+import { Fig, FigGrid } from '@/components/fig/Fig';
+import { chordFor } from '@/components/fig/figAddress';
 import { partialSharePct } from '@lcx/shared';
 import { SectionLabel } from '@/components/ui';
 import type { MarketingReply, MarketingSummary } from '@/lib/api/marketing';
-import { LowerBoundTile, ObservationFrameNote, Th, Td } from './DeskAtoms';
+import { ObservationFrameNote, Th, Td } from './DeskAtoms';
 import {
   MARKETING_INBOUND_RETENTION_DAYS as RETENTION_DAYS,
   MARKETING_MEASUREMENT_IS_ABOUT_THE_DESK,
@@ -198,35 +200,30 @@ export function DeskMeasurement({ queue, summary, now }: {
       {/* ── WHAT IS ACTUALLY OBSERVABLE TODAY ─────────────────────────────────── */}
       <div>
         <SectionLabel as="h3">What this environment can observe</SectionLabel>
-        <p className="mt-0.5 text-[10px] leading-snug text-grey">
+        <p className="mt-0.5 text-micro leading-snug text-grey">
           Every count here is a lower bound and is labelled as one. None of them measures how LCX is being
           talked about; they measure what arrived in one mailbox.
         </p>
-        <div className="mt-1 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
-          <LowerBoundTile label="Open items observed" value={queue.length} frame={inboundFrame} />
+        <FigGrid cols={4} className="mt-1">
+          <Fig id="marketing.open-observed" address={chordFor('marketing')} label="open items observed" value={queue.length} kind="int" source={{ at: new Date(now).toISOString(), kind: 'derived' }} goodIsUp={false} frame={(<>
+              <p className="text-micro leading-snug text-grey">lower bound — at least this many; the true figure is unknown and higher.</p>
+              <ObservationFrameNote frame={inboundFrame} />
+            </>)} />
           {/* TWO DIFFERENT POPULATIONS, AND THEY USED TO SHARE ONE UNMARKED FRAMING.
               `suspicious` is counted over OPEN rows only and is capped at 200 by the read
               behind it; `unparsed` counts the whole table, quarantined rows included. Same
               tile shape, same absence of a frame, and a reader had no way to tell. Each now
               carries its own frame naming its own population. */}
-          <LowerBoundTile
-            label="Replies that tried to steer the model"
-            value={summary ? summary.suspicious : null}
-            tone={summary && summary.suspicious > 0 ? 'warn' : undefined}
-            frame={suspiciousFrame}
-          />
-          <LowerBoundTile
-            label="Emails the parser could not read"
-            value={summary ? summary.unparsed : null}
-            tone={summary && summary.unparsed > 0 ? 'warn' : undefined}
-            frame={unparsedFrame}
-          />
-          <div className="border-l-2 border-line px-2 py-1.5">
-            <div className="font-mono text-[10px] uppercase tracking-wider text-grey">Post-time coverage</div>
-            <div className="mt-0.5 text-[20px] font-bold tabular-nums text-navy">
-              {clock === null || clock.pct === null ? '—' : `${clock.pct}%`}
-            </div>
-            <p className="text-[10px] leading-snug text-grey" data-testid="mkt-post-time-coverage">
+          <Fig id="marketing.suspicious" address={chordFor('marketing')} label="replies that tried to steer the model" value={summary ? summary.suspicious : null} kind="int" source={{ at: new Date(now).toISOString(), kind: 'derived' }} goodIsUp={false} frame={(<>
+              <p className="text-micro leading-snug text-grey">lower bound — at least this many; the true figure is unknown and higher.</p>
+              <ObservationFrameNote frame={suspiciousFrame} />
+            </>)} />
+          <Fig id="marketing.unparsed" address={chordFor('marketing')} label="emails the parser could not read" value={summary ? summary.unparsed : null} kind="int" source={{ at: new Date(now).toISOString(), kind: 'derived' }} goodIsUp={false} frame={(<>
+              <p className="text-micro leading-snug text-grey">lower bound — at least this many; the true figure is unknown and higher.</p>
+              <ObservationFrameNote frame={unparsedFrame} />
+            </>)} />
+          <Fig id="marketing.post-time-coverage" address={chordFor('marketing')} label="post-time coverage" value={clock === null || clock.pct === null ? null : clock.pct} kind="pct" source={{ at: new Date(now).toISOString(), kind: 'derived' }} frame={(<>
+              <p className="text-micro leading-snug text-grey" data-testid="mkt-post-time-coverage">
               {clock === null
                 ? 'Coverage is not being reported by this environment. It is deliberately NOT computed from '
                   + 'the loaded page: the queue is capped, so a page-wide ratio would read as a population-wide '
@@ -235,15 +232,15 @@ export function DeskMeasurement({ queue, summary, now }: {
                   ? 'No open items, so there is nothing to measure coverage over.'
                   : `${clock.covered} of ${clock.total} open items carry a true post time — counted over every open row, not over the ${queue.length} loaded here. Any latency figure quoted for this desk covers only those, and the rest are excluded rather than timed from when the email arrived.`}
             </p>
-            <ObservationFrameNote frame={ownFrame} />
-          </div>
-        </div>
+              <ObservationFrameNote frame={ownFrame} />
+            </>)} />
+        </FigGrid>
       </div>
 
       {/* ── THE PROCESS METRICS ───────────────────────────────────────────────── */}
       <div>
         <SectionLabel as="h3">The process metrics</SectionLabel>
-        <p className="mt-0.5 text-[10px] leading-snug text-grey">
+        <p className="mt-0.5 text-micro leading-snug text-grey">
           None of these can be computed on this environment yet, and each says which read it needs —
           deliberately, because a metric rendered as 0 while its table does not exist is the most damaging
           thing a measurement panel can do.
@@ -260,7 +257,7 @@ export function DeskMeasurement({ queue, summary, now }: {
           <tbody className="divide-y divide-line">
             {PROCESS_METRIC_KEYS.map((k) => (
               <tr key={k} data-testid={`mkt-metric-${k}`}>
-                <Td className="font-mono text-[10px] font-semibold text-navy">{k.replace(/_/g, ' ')}</Td>
+                <Td className="font-mono text-micro font-semibold text-navy">{k.replace(/_/g, ' ')}</Td>
                 <Td className="text-grey">{PROCESS_METRIC_COPY[k].measures}</Td>
                 <Td>
                   <span className="block font-semibold leading-snug text-status-conditional">not computable here</span>
@@ -276,7 +273,7 @@ export function DeskMeasurement({ queue, summary, now }: {
       {/* ── THE CEILING, AS DATA ──────────────────────────────────────────────── */}
       <div>
         <SectionLabel as="h3">Figures this compartment refuses to show</SectionLabel>
-        <p className="mt-0.5 text-[10px] leading-snug text-grey">
+        <p className="mt-0.5 text-micro leading-snug text-grey">
           Not &ldquo;not yet&rdquo;. Each of these needs something no keyless desk can obtain, and a panel
           showing one would be a defect rather than a feature. Where there is an honest substitute it is named;
           where there is not, saying so is a better answer than a proxy nobody can defend.
@@ -293,7 +290,7 @@ export function DeskMeasurement({ queue, summary, now }: {
           <tbody className="divide-y divide-line">
             {(Object.keys(REFUSED_METRICS) as RefusedMetricKey[]).map((k) => (
               <tr key={k} data-testid={`mkt-refused-metric-${k}`}>
-                <Td className="font-mono text-[10px] font-semibold text-status-blocked">{REFUSED_LABEL[k]}</Td>
+                <Td className="font-mono text-micro font-semibold text-status-blocked">{REFUSED_LABEL[k]}</Td>
                 <Td className="text-grey">{REFUSED_METRICS[k].reason}</Td>
                 <Td className="text-grey">
                   {REFUSED_METRICS[k].substitute === ''

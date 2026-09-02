@@ -61,23 +61,22 @@
 | S2 ONE MATERIAL | DONE · LIVE (gate #3 clean, 6,660 tests) | 180c939 | `docs/instrument/audit/after-s2/BASELINE.md` | seam on every twin pair **0.00** both themes (was 2.78 / 3.09 / 3.13); `theme.ts` gained the `page` radiance role after the first derivation (page ← ground) was refused by measurement; scenery block in tokens.css GENERATED (`npm run gen:tokens -w apps/web`), index.html pre-hydration colours generated; ratchet `oneMaterial.test.ts`; 8 contrast/corridor records re-recorded with reasons (all moves ≤ 1 level, two improvements) |
 | S3 ONE CAMERA | DONE · **LIVE both surfaces** (Pages needles probe 3; Render deployment 6209660953 `success`) | 6a2c04b | `docs/instrument/audit/after-s3/BASELINE.md` | routes attempting a view transition on a REAL client navigation **0 → 76 of 79** (the 3 at zero — /lcxos /portal /select — have `linkCount 0`: no in-app link, so "not navigated", not "cut"); continuity call sites 0 → 3; rAF at rest still 0; intervals still heartbeat + `@vite/client` only; WebKit visible run `ready` 212 ms / `finished` 452 ms; ratchet `oneCamera.test.ts`; the instrument caught the `viewTransition: undefined` clobber |
 | S4 THE WATCH | DONE · **LIVE both surfaces** (Pages probe 3: JS has `stated prior` + `/v1/watch?since=`, CSS FREE of `pulse-beacon`; Render deployment 6210174494 `success`) | 37fa9f6 | `docs/instrument/audit/after-s4/BASELINE.md` | ambient **49 → 28** (beacon 10 → 0, pulse 13 → 2 in LoadingSkeleton; spin/slide-in unchanged by design); routes with CSS motion at rest **77 → 1** (/ontology = React Flow animated edges → S5); `GET /v1/watch?since=` entitlement-first, stated prior, `absent[]`; ONE arrival store, three readers; feel wired in `invoke.ts`; initial JS 813 → 820/850; ratchets `oneWatch.test.ts` + api `watch.test.ts`; `/v1/watch` declared in the compartment register |
-| S5 FLOORS ARE DATA | **IN PROGRESS** | — | — | per "S5 BUILD SPEC" below — X1 REMOVE first (its own header is the proof), E1 retire, bind E2–E6, the join (three unions + two maps + drift test), ratchet `oneFloor.test.ts` |
-| S6 THE TERMINAL | not started | — | — | |
+| S5 FLOORS ARE DATA | DONE · **LIVE both surfaces** (Pages probe 1: `do not hold` + `Holdings declaration` present, `import("./shared-` ABSENT from the entry; Render deployment 6213239582 `success`; entry chunk 427,034 → 426,848 B) | 6b2f0dc | `docs/instrument/audit/after-s5/BASELINE.md` + `APP_SWEEP.md` | GL contexts at rest **77 → 2** (/select Forge by design; /ontology orrery default-ON, census counts calls); shell carries GL true → false; X1 REMOVED by its own header's measurement; E1 RETIRED by the scorecard's dichotomy; GL budget re-pinned 3 → 1 with a pinned count of 15 routes at cap; THE JOIN: 18 inspector types across API/web/registry with per-group entitlement and WITHHELD groups (pre-S5 sales leak closed); 7 lazy payloads; `ReliefWatchLine` on six reliefs; app sweep 6/7 reached, 0 findings, 0 worse in light (sweep fixed for default-ON toggles); initial JS 820/850, largest 417/440; hex census held at 125 after catching my own +7; ratchets `oneFloor.test.ts` + api `links.test.ts`; four gates, each red one real |
+| S6 THE TERMINAL | **IN PROGRESS** | — | — | per "S6 BUILD SPEC" below — FIXTURE MODE in the instrument first (an honest before), then `<Fig>`, marks, addresses, the terminal grid on the eight desks, ratchet `oneTerminal.test.ts` |
 | S7 THE OBJECT | not started | — | — | |
 
-**NEXT ACTION (S5 close-out, 2026-09-02):** S5 is BUILT in tree (X1 removed, E1 retired, the join, the
-captions; every relief/inspector/ratchet suite green; gate #1's two catches fixed). Steps, in order, never
-concurrent: (1) after-s5 capture DONE (77 → 2 GL; hex regression fixed → the report is RE-CAPTURED at step 3b);
-(2) **gate #3** from the ROOT → `/tmp/gate-s5.log` (0 npm errors, FIVE totals; #1 and #2 each caught one real
-AiProse rule); (3) app sweep `APP_SWEEP_OUT_DIR=/Users/nik/Downloads/
-usclaude-main/docs/instrument/audit/after-s5/app-sweep node scripts/3d-audit-app.mjs` (port 5188; E1 already
-dropped from its roster); (4) `node scratchpad/s5-numbers.mjs` → fill `<GL>/<REST>/<JS>/<CHUNKS>/<SWEEP>/<GATE>`
-in `scratchpad/s5-commit-msg.txt`; (5) `git add -A` the S5 files (deletions included) + after-s5 + LEDGER, commit
-from the ROOT, `git push lcx-sales dev:main`; (6) `bash scratchpad/verify-live.sh <sha> --js 'do not hold' --js
-'Open holdings desk' --js-absent 'import("./shared-'` (NOT "Theatre view" — that label lived in a lazy chunk the
-script never fetches; see §5 "LIVE-CHECK DESIGN"), then compare the entry chunk's bytes to today's 427,034; (7)
-flip S5 → DONE · LIVE, S6 → IN PROGRESS, promote the S6
-spec from DRAFT, update memory. THEN S6 per its spec — fixture mode in the instrument FIRST (an honest before).
+**NEXT ACTION (S6 close-out, 2026-09-02):** S6 is BUILT on all eight desks (see §5); web tsc clean; ratchet
+`oneTerminal.test.ts` + desk suites green. Steps, in order, never concurrent: (1) **gate #1** from the ROOT →
+`/tmp/gate-s6.log` (0 npm errors, FIVE totals, perf budget); (2) after-s6 DENSITY capture — fixtures on, reliefs
+off, eight desks: `INSTRUMENT_FIXTURES=1 INSTRUMENT_ROUTES=/command-deck,/bd-pipeline,/command,/regulatory-dashboard,
+/distribution,/marketing,/gps,/wbr INSTRUMENT_OUT_DIR=…/docs/instrument/audit/after-s6-fixtures node
+scripts/instrument-audit.mjs`; (3) after-s6 FULL capture (79 routes, no API) into `…/after-s6/` for the standing
+metrics; (4) fill `<PERDESK>/<MEDIAN>/<FULL>/<JS>/<LARGEST>/<GATE>` in `scratchpad/s6-commit-msg.txt` — per desk
+before → after, median, and SAY which desks met ×3 and which did not; (5) `git add -A` (before-s6-fixtures too) +
+commit from ROOT + `git push lcx-sales dev:main`; (6) `bash scratchpad/verify-live.sh <sha> --js 'fig-marks'
+--lazy-js 'first reading' --lazy-js ' figure · g'`; (7) flip S6 → DONE · LIVE, S7 → IN PROGRESS (its grounding is in
+§5: Blender 5.2.0 LTS present; DMG plate EXISTS 1320×840 by make-dmg-plate.mjs with four derived constraints; the
+plan's "missing" claim is stale), update memory.
 
 ### S4 BUILD SPEC (grounded 2026-09-01; execute after S3 commits)
 **Sources, all already held (cite):** `audit_log(actor, action, entity, entity_id, meta, created_at)` — 13 write
@@ -211,7 +210,7 @@ nothing enforced it); every `RELATED_RESOLVERS` key has a web payload.
 **Budgets:** GL stays lazy (15 chunks, 0 eager after X1 goes — actually −3.9 KB eager); initial JS ≤ 820 KB
 (S5 adds no eager bytes; payloads are lazy with the drawer).
 
-### S6 BUILD SPEC (grounded 2026-09-02 while S5's gate ran; DRAFT until S5 is DONE)
+### S6 BUILD SPEC (grounded 2026-09-02; IN FORCE from S5's commit 6b2f0dc)
 
 **The claim under test (plan §S6):** REACH and COMPRESSION — a screen holds three times the figures, every
 figure is live and dated, and every figure is one keystroke away. Kill tests CERTAINTY (a figure carries
@@ -535,6 +534,84 @@ removal recovers ~3.9 KB); fonts unchanged (Plex Mono is already loaded — NO t
   orrery, E3 pipeline, E2 globe, E6 vault, E5 surface; E7 disabled by design). Light/dark sd ratios 123–302%.
   Reports at `docs/instrument/audit/after-s5/APP_SWEEP.md` + `app-sweep/README.md` (captures ignored). Full
   after-s5 RE-CAPTURE launched detached (`/tmp/instrument-after-s5.log`); commit follows it.
+- 2026-09-02 · **S5 COMMITTED 6b2f0dc, PUSHED, VERIFIED LIVE** — recapture matched the draft (hex 125, GL 2, shell
+  false, errors 0); Pages needles all present/absent as designed at probe 1; Render 6213239582 `success`. Entry
+  chunk **427,034 → 426,848 B**: X1's eager bytes left, the join's eager registry/panel growth took most of it
+  back — a net −186 B, said rather than rounded up to "3.9 KB saved". S6 opened.
+- 2026-09-02 · **S6 STEP 1 — FIXTURE MODE.** `scripts/instrument-fixtures.mjs`: the smallest deterministic payloads
+  that render the eight desk landings POPULATED (shapes mirror `lib/api/*.ts`, read on the day; command +
+  pipeline follow the sweep's own fixtures, duplicated because that file sweeps on import; instants anchored to
+  the frozen clock; NO report number is read off a fixture value). `instrument-audit.mjs`: `INSTRUMENT_FIXTURES=1`
+  registers them AFTER the abort floor on desk routes only; totals carry `fixtures`; the runtime header says
+  density is a property of the LAYOUT; a per-desk figures line (dark/light) is printed. First before-capture
+  (eight desks, fixtures on): `/regulatory-dashboard` 64 · `/bd-pipeline` 13 · `/command` 48 · `/wbr` 23 ·
+  `/distribution` 8 · `/marketing` 2 · `/gps` 19 · `/command-deck` 2 — AND TWO FINDINGS BEFORE TRUSTING IT:
+  (a) `/command-deck` = 2 because it CRASHED (4 page errors "reading 'length'"): my launch-sim fixture lacked
+  `warnings[]` (LaunchSim's full shape read from command.ts and fixed); (b) `/bd-pipeline` = 13 with GL 4 and 5
+  running animations: the E3 relief is DEFAULT ON, so under fixtures the desk mounted its GL channel view and
+  the DOM table's figures were not in the viewport. The density claim is about the DOM terminal, so fixture mode
+  ALSO SEEDS every `relief:*` preference OFF and says so in the header. The wiring slip: my first python pass
+  aborted on an anchor and wrote nothing, and the "before" that ran was a plain no-API run — caught by the
+  header line not appearing; re-applied and re-run. Honest BEFORE re-taken after both fixes.
+- 2026-09-02 · **S6 HONEST BEFORE (fixtures on, reliefs OFF, 0 page errors, HEAD 6b2f0dc)** — figures in the first
+  viewport per desk: `/regulatory-dashboard` **64** · `/bd-pipeline` **126** · `/command` **48** · `/wbr` **23** ·
+  `/distribution` **8** · `/marketing` **2** · `/gps` **19** · `/command-deck` **32**; median **27.5**. HOW THE ×3
+  APPLIES, decided before building so it cannot be re-read to fit the result: the pipeline desk is already a dense
+  table (126) and the regulatory dashboard a wall of compiled figures (64) — tripling them would be gaming the
+  count, so those two get the CERTAINTY half of S6 (every figure dated, with its delta since the mark) and no
+  density target; the ×3 is the target for the desks BELOW the median — `/distribution` (8 → 24), `/marketing`
+  (2 → 6), `/gps` (19 → 57), `/wbr` (23 → 69) — and `/command-deck` (32) and `/command` (48) are reported as
+  measured with the same `<Fig>` conversion. The after is taken with the SAME fixture mode; both numbers go in the
+  commit body per desk, with the median.
+- 2026-09-02 · **S6 BUILT SO FAR:** `components/fig/Fig.tsx` (`<Fig>` + `<FigGrid>`: value by kind in `num-tabular`
+  Plex Mono, delta since the MARK with ▲▼ and tone, age by staleness in STATUS tokens from `useClock(1000)`,
+  source kind record/derived/estimate, `undated` and `—` refusals visible, `id=fig-<id>` anchor + scroll on hash);
+  `lib/figMarks.ts` (current → mark promoted by `useArrivalStore.arrive` via `rollover()`; first reading said);
+  `components/fig/figAddress.ts` (registry → `g<key>` chip from `lib/destinations.ts`, `figPaletteItems()` spread
+  into `PAGE_COMMANDS`); `/distribution` re-laid as the first terminal (20 registered figures; engine outputs dated
+  by the instant they were computed, records by their newest timestamp). CORRECTION: `/marketing`'s landing
+  renders `MarketingDesk`, which fetches (summary, queue, perimeter, …) — my "no fetchers" note was wrong and its
+  before of 2 is an aborted-API reading; the marketing ceiling is a plain unwrap, so it is fixtured (summary +
+  queue + perimeter) and that desk's before RE-TAKEN before its conversion: **`/marketing` = 8** (fixtures on, 0
+  errors; ×3 target → 24). The eight-desk before is therefore 64 · 126 · 48 · 23 · 8 · **8** · 19 · 32, median 27.5
+  (unchanged). Converted so far: `/distribution` (20 figs), `/wbr`, `/command` (intel), `/bd-pipeline` header,
+  `/regulatory-dashboard` (its compiled dataset carries NO instant → its figures read `undated` — a finding about
+  the data, kept visible). Fig gained `compare` (the record's own comparison beside the arrival delta).
+- 2026-09-02 · S6 conversions continued: `/gps` (12 figs: live, clients, engagements, open value/margin/vendor
+  cost PER CURRENCY — largest shown, others counted, never summed —, collected, awaiting deposit, oldest accepted
+  as a duration, three gaps; dated by the instant the summary was computed), `/command-deck` (16 figs: counts
+  strip, gating, gap register; dated by the overview's `generatedAt`), registry now covers distribution,
+  governance, intel, gps, command, regulatory, sales (+ prefixes for data-keyed WBR metrics and SLOs). Ratchet
+  `lib/__tests__/oneTerminal.test.ts` written: per-desk `<Fig>` minimums WITH reasons, no private figure
+  components, every id registered or prefixed, chords resolve, 11 px floor, Fig still. REMAINING: `/marketing`'s
+  `DeskMeasurement` (its `LowerBoundTile` carries an observation FRAME — an honesty device the figure must keep,
+  so Fig gains a `frame` slot), then gate → after-s6 capture (fixtures) → commit.
+- 2026-09-02 · S6 conversions COMPLETE on all eight desks: `/marketing`'s `DeskMeasurement` → 4 `<Fig>` with
+  `frame` (the lower-bound sentence + `ObservationFrameNote` travel with each count; the coverage explanation
+  `<p data-testid="mkt-post-time-coverage">` kept verbatim as the frame). THE FLOOR ENFORCED: 22 `text-[9|10px]`
+  literals on the desks → `text-micro` (CommandDeck 8, DeskMeasurement 7, Gps 4, Dashboard 3) + one `text-[7px]`
+  on Dashboard. Ratchet minimum for `/distribution` stated as 16 LITERALS (one `<Fig` inside a map renders four).
+  Web tsc clean; 47 suites / 748 tests green around the desks. NEXT: gate from ROOT → after-s6 capture (fixtures
+  on, reliefs off, eight desks + a full 79-route run for the other metrics) → commit with per-desk before/after.
+- 2026-09-02 · **S6 GATE #1 CLEAN, first run** (0 npm errors; 1,997 · 358 · 3,532 · 2,743 · 20; perf OK 820/850,
+  418/440, 209 lazy chunks). **DENSITY MEASURED** (after-s6-fixtures, 0 errors): distribution 8 → **59** (×7.4, MET);
+  gps 19 → 51 (×2.7, 6 short of 57); wbr 23 → 47 (×2.0 — the review's narrative + executive summary sit above its
+  figures by the WBR's own form; left); marketing 8 → 8 (×1.0 — BY DESIGN: the desk's four lower bounds are all it
+  can observe and it refuses the rest in its own table; a figure system cannot honestly add what the desk refuses);
+  command-deck 32 → 60; intel 48 → 91; regulatory 64 → 71 (certainty; all six UNDATED — dataset has no instant);
+  pipeline 126 → 128 (certainty). **Median 27.5 → 59.5 (×2.16). One of four targets met, two short, one refused —
+  reported as measured.** The honest `/marketing` before (8) copied into `before-s6-fixtures/marketing/`. Full
+  79-route capture launched detached → `after-s6/`; commit follows.
+- 2026-09-02 · **S7 GROUNDING (cont.):** the repo holds NO `.blend`, no `render.py`, no Blender script — S7 starts
+  from zero on the render side (Blender 5.2.0 LTS is installed). `/lcxos` is `pages/Launch.tsx` (261 lines): its
+  hero is `<LcxMark size={36}>` + an `<h1>` — no image; `SelectOperator` mounts `ForgeBackdrop` over `ForgePlate`
+  (a CSS studio sweep). `public/` = fonts + `lcx-mark.svg` + favicon + apple-touch-icon (744 K; passthrough
+  722/1024 → ~300 KB headroom). GPS print sheets: `components/gps/GpsPrint.tsx`, `GpsPrintSheets.tsx`.
+  TOOLING checked: no cwebp/avifenc/ImageMagick; Blender 5.2.0 writes WEBP directly; `sips` present; **PIL 11.3
+  present** → brand hex decoded from PNG bytes via PIL (never through Blender's colour management); AVIF not
+  shippable here. S7 spec DRAFT in scratchpad `s7-spec-draft.md` (pipeline `scripts/blender/`, objects in order:
+  /lcxos hero ≤ 120 KB, launch/empty poster ≤ 80 KB, DMG plate render BESIDE the generated one for Nik's one look,
+  print-sheet mark ≤ 30 KB; app icon NOT re-rendered — a 3-D icon would redraw the mark; ratchet `oneObject.test.ts`).
 - 2026-09-02 · **S5 GROUNDING (read while S4's gate ran — cite, don't re-derive).** (1) The plan's `InspectorType`
   IS at **`apps/api/src/graph/links.ts:19`** (API side — my first grep searched web/shared only and I wrote
   "no longer exists"; corrected): 11 members `project deal handoff contact claim task signal listing decision
