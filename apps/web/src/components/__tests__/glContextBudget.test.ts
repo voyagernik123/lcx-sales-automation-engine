@@ -89,7 +89,8 @@ const CONCURRENT_CAP = 2;
  * surface (or a lost one) shows up as a diff. `pages/CommandDeck.tsx` must remain among them: it is the
  * route that was at three, and the one whose reduction S5 was measured on.
  */
-const ROUTES_AT_CAP = 15; // six relief routes + nine flat-chart routes (each = the stage + one of its own), measured 2026-09-02
+const ROUTES_AT_CAP = 16; // six relief routes + nine flat-chart routes (each = the stage + one of its own), measured 2026-09-02;
+                          // + pages/Launch.tsx since P6 (2026-09-04): the /lcxos hero is the Forge LIVE over its still — the stage + the Forge
 
 /**
  * Routes with more JSX mount sites for one relief than can be live at once, with the reason.
@@ -188,21 +189,6 @@ const withoutComments = (src: string): string =>
 
 const SHARED_USERS = FILES.filter((f) => /sharedRenderer\s*\(/.test(withoutComments(SOURCE.get(f)!)));
 
-/**
- * The component names whose JSX brings each owner in — derived from the module that imports it
- * rather than hand-listed, so an owner added tomorrow is censused tomorrow.
- */
-const MOUNT_NAMES = new Map<string, string[]>(OWNERS.map((owner) => {
-  const names: string[] = [];
-  for (const file of FILES) {
-    if (file === owner) continue;
-    if (!specifiers(SOURCE.get(file)!).some((s) => resolveSpecifier(s, file) === owner)) continue;
-    for (const m of SOURCE.get(file)!.matchAll(/export function ([A-Z]\w*)/g)) names.push(m[1]!);
-  }
-  return [owner, names];
-}));
-
-/** Every page module the router can navigate to, eager or lazy. */
 const ROUTES = existsSync(ROUTER)
   ? [...new Set([
     ...[...readFileSync(ROUTER, 'utf8').matchAll(/import\(\s*['"](@\/pages\/[^'"]+)['"]/g)].map((m) => m[1]!),
@@ -212,6 +198,26 @@ const ROUTES = existsSync(ROUTER)
     .filter((f): f is string => f !== null)
     .sort()
   : [];
+
+/**
+ * The component names whose JSX brings each owner in — derived from the module that imports it
+ * rather than hand-listed, so an owner added tomorrow is censused tomorrow.
+ */
+const MOUNT_NAMES = new Map<string, string[]>(OWNERS.map((owner) => {
+  const names: string[] = [];
+  for (const file of FILES) {
+    if (file === owner) continue;
+    /* A ROUTE PAGE IS THE BUDGET'S ROOT, NOT A WRAPPER. Its export is rendered once by the router, so counting it as a
+       name that "brings the owner in" made `<Launch />` in router.tsx a second mount site for ForgeBackdrop the day
+       Launch.tsx started importing it (P6, 2026-09-04) — a mount that does not exist. Wrappers live under components/. */
+    if (ROUTES.includes(file)) continue;
+    if (!specifiers(SOURCE.get(file)!).some((s) => resolveSpecifier(s, file) === owner)) continue;
+    for (const m of SOURCE.get(file)!.matchAll(/export function ([A-Z]\w*)/g)) names.push(m[1]!);
+  }
+  return [owner, names];
+}));
+
+/** Every page module the router can navigate to, eager or lazy. */
 
 interface RouteBudget {
   readonly route: string;

@@ -1,0 +1,112 @@
+feat(vfx): P6 THE OBJECTS — the Forge as a machined mesh from Blender, live on sign-in and /lcxos; room markers; the plate's edge
+
+THE PRODUCTION (VFX_PRODUCTION_PLAN.md) P6, on P5 (a395018). The plan's line: "the Forge on sign-in as a real machined mesh
+(bevels, brushed grain, engraved mark) under the P3 stack, live where hardware allows and the S7 still where it does not; room
+markers on the stage as small machined objects; the plate with a real edge profile; /lcxos hero live."
+
+WHAT YOU WILL SEE
+  · /select and /lcxos: the disc with the LCX mark engraved into its face, bevelled edges catching the key, the brushed highlight
+    bar travelling across it, the brand ring on a bevelled plinth. On /lcxos it is the hero itself — LIVE over the S7 still,
+    with the still's own camera, so the swap lands on the same framing; the still remains where GL refuses and on paper.
+  · Every shell route: eight small machined pucks on the arc behind the plate, one under each room's glow.
+  · The plate stands on a slab with a real edge — a 45° chamfer band beside the page, then walls — visible for the first time
+    (see THE DEFECT).
+
+THE ASSET (public/objects/forge.glb, 160,520 B + .render.json)
+  · scripts/blender/export_gltf.py writes the GLB BY HAND — no exporter add-on, no Draco: KHR_mesh_quantization from the start
+    (int16 positions in the unit cube with the extent on the node, int8 normals, uint16 uv/indices). Blender 5.2.0 LTS.
+  · disc/ring/plinth are build_forge.py's scene with bevel modifiers; the LCX mark is a boolean difference of the EXTRACTED
+    path data in apps/web/public/lcx-mark.svg (never redrawn) — 4 polygons, 0.012 deep; 72 vertices sit at the cut floor.
+    The room marker is a fourth mesh (r 0.18, h 0.05, bevelled). 12,376 triangles in all; ring slimmed 160×24 → 128×16
+    (tube facets 0.02 units, below a device pixel at render scale).
+  · Y-UP. The first export lay on its side: Blender is Z-up, the engine Y-up (mesh.ts: a cylinder's axis is y). The exporter
+    carries the forward map (x, y, z) → (x, z, −y) on positions and normals; bounds now equal the live radii on every axis.
+  · Brand hex FROM THE BYTES: oneObject.test parses the glb and encodes the ring's linear baseColorFactor back through the
+    engine's own sRGB transfer — #2C6BFF exactly — and holds the sidecar (bytes = file, Standard, engraving polygons ≥ 1).
+
+THE ENGINE
+  · packages/gl/src/env/gltf.ts — GLB container, accessors decoded generically by componentType + normalized (quantized files
+    take the float path), node TRS applied (de-quantization lives on the node), NORMAL/TANGENT derived when absent, pbr
+    factors + our extras. Refusals in words (bad magic, short file, external buffers, unsupported required extension,
+    non-indexed or non-triangle primitive, index out of range, node hierarchy). 5 tests. Exported from the index.
+  · stageScene.slabGeometry: OUTWARD 45° chamfer (PLATE_CHAMFER 0.05) — outward so the highlight sits in the gutter beside
+    the page, never under a glyph (the plate ceiling is about the top face). Faces oriented outward BY CONSTRUCTION, checked
+    against the centroid under computeNormals. 4 tests.
+
+THE WIRING
+  · ForgeBackdrop draws the four primitives on its FIRST frame (nothing waits on a fetch), then fetches the glb and swaps
+    disc/ring/plinth in place through forgeObjects.ts — every named mesh present and every upload accepted, or nothing is
+    swapped and what was uploaded is disposed (3 tests). Materials stay in the component, per theme (anisoPreserved pins
+    them). The outcome is written on the canvas (`data-objects`) for the instrument. `layer="cover"` lays the same object
+    over the /lcxos still with build_forge.py's camera (target 0.34, distance 5, az 22°, el 24°, fov 30°). print:hidden.
+  · Stage.tsx fetches the same file (browser-cached after the first route) and draws the marker under each room glow;
+    `data-markers` records the outcome; absent for good if it refuses — the glows alone are the P3 frame.
+  · No eager bytes: the fetch begins after the first frame is scheduled; index.html preloads nothing new.
+
+THE DEFECT
+  The plate's walls were wound INWARD since P2 and the lit pass culls back faces (cullFace BACK): the "plate" the page stood on
+  was a top face and nothing else, and nothing had measured a wall. slabGeometry's new test read a −0.707 where +0.707 was
+  claimed. The walls and the chamfer render for the first time in this commit — a luminance change the sweep measured, not
+  assumed (below).
+
+THE HARNESS
+  · /v1/watch answered on every route (WatchResponse-shaped) — the P5 captures all carried "WATCH The watch is unavailable".
+  · The instrument waits (bounded, 8 s) for `data-objects` / `data-markers` and records them per capture as `objects`.
+  · framebudget.spec.ts: idle-frame floor (idleN < 30 → skip with the runner's numbers) — CI run 33654022610 failed twice on a
+    no-code commit with a one-frame idle control at p50 1233 ms; the existing guard counted dropped frames and could not fire.
+  · check-bundle: INITIAL_PREFIXES retired (index.html is the one source; the 762 vs 760 KB warning is gone);
+    MAX_PASSTHROUGH_KB 1024 → 1152 — what it bought is the glb; measured before 867 KB, after 1025 KB of 1152.
+  · glContextBudget: pin 15 → 16 (Launch.tsx = stage + live Forge); route pages excluded from mount-name derivation (the
+    router's `<Launch />` had counted as a second Forge mount). reliefTheme AND reliefRedrawRatchet: a string-literal-union prop
+    is a mode, not data — `layer` had made the Forge a "data renderer" and put its arrival-arc rAF and its effect deps under
+    rules written for the six reliefs; `layer` is read through a ref so the setup effect's deps stay `[intensity]`.
+  · ForgeBackdrop now honours `lcx:gl-force-off` like the stage (dispose, hide, the still beneath is the OFF frame): /select's
+    visibility pair had been identical in every sweep since P3, so its GL coverage read 0 while the Forge was plainly drawn.
+  · THE FIRST P6 SWEEP WAS VOID and the fill printed it as zeros. My `objects` readback was declared inside the nested block
+    that reads the studio map and referenced from the capture's return — a ReferenceError caught per route as ✗ on all 80.
+    The fill did not refuse a baseline whose captures all failed; it printed "72 → 0" as if measured. Fixed both: the readback
+    is declared at function scope like `stageEnv`, and docs/vfx/p6/fill.mjs exits 2 when no capture REACHED a page.
+  · AND the objects wait sat inside the instrument's SEATED branch — /select and /lcxos are unseated, so the two routes the
+    wait was written for never ran it; that is why `objects.forge` is empty in the P6 record and why the rest window caught
+    the arrival arc's tail there. Moved to its own block for every reached route. SMOKE (instrument, /select, fixtures):
+    objects.forge = "glb 160520 bytes · disc,ring,plinth,marker", arc = done after 3.9 s, rAF at rest 0/s (was 4), GL coverage
+    95 % dark / 96 % light. The P6 record above was taken before this fix and says so; P7's sweep carries it over all routes.
+
+MEASURED
+  THE SWEEP (docs/instrument/audit/production-p6; 79 routes × 2 themes, fixtures incl. heroes and desk charts, one-page-load pairs,
+    warm-up 80 routes / 166 s):
+    dark: GL visible on 72 → 74 of 79 · median 33% → 35% · ≥ 50% on 1 → 2 · ≥ 35% on 34 → 38 · ≥ 20% on 49 → 52
+    light: GL visible on 77 → 79 of 79 · median 44% → 44% · ≥ 50% on 35 → 35 · ≥ 35% on 48 → 48 · ≥ 20% on 59 → 60
+    DESK ROUTES (P5 → P6; "figures" says whether content rendered — with the fixtures the desks are opaque cards over the plate):
+    /bd-kpis               dark  11% →  10% · light  21% →  21% · figures 38 · errors 0
+    /win-loss              dark  12% →  12% · light  19% →  20% · figures 33 · errors 0
+    /forecast              dark   8% →   7% · light  14% →  14% · figures 48 · errors 0
+    /scorecard             dark  22% →  22% · light  30% →  30% · figures 24 · errors 0
+    /command-deck          dark  29% →  29% · light  36% →  36% · figures 31 · errors 0
+    /bd-pipeline           dark  27% →  27% · light  53% →  53% · figures 16 · errors 0
+    /command               dark  17% →  18% · light  36% →  35% · figures 92 · errors 0
+    /regulatory-dashboard  dark   7% →   7% · light  14% →  14% · figures 78 · errors 0
+    /distribution          dark  21% →  22% · light  35% →  35% · figures 60 · errors 0
+    /marketing             dark  30% →  31% · light  45% →  44% · figures 9 · errors 0
+    /gps                   dark  14% →  14% · light  27% →  27% · figures 52 · errors 0
+    /wbr                   dark  17% →  17% · light  25% →  25% · figures 48 · errors 0
+    Hero panels held: orrery 79%/83% · pipeline 43%/86% · globe 65%/81% · vault 31%/88% · storm —/— · surface 83%/92%. Chrome-fade text hits: 0. Stage redraw: n 154, median 4 ms, p90 4.4, max 4.9, over 8: 0.
+    Standing: continuity 77 → 77 · motion at rest 0 → 0 · max intervals 2 → 2 · rAF loops 0 → 1 · GL contexts 78 → 79 · page errors 0 → 0.
+  READ HONESTLY.
+  · The standing line's "rAF loops 0 → 1" is /lcxos (14–15 rAF/s in the 1-second rest window; /select 4/s). It is the tail
+    of the Forge's 5-second arrival arc (SWEEP_MS), which mounts late on /lcxos (lazy chunk) and stops — `rafRef` is nulled
+    when t ≥ 1 — not idle motion. The instrument had no way to know the arc had ended; the canvas now says so (`data-arc`)
+    and the instrument waits for `done` before its rest window. Measured in P7's sweep, whose own gate is rAF at rest 0.
+  · `objects.forge` is empty in every capture while the captures plainly show the machined mesh: the wait treated an ABSENT
+    Forge canvas as done — the lazy chunk had not mounted yet. The mount points now carry `data-forge-mount` synchronously
+    and the wait keys on it. The markers string was recorded on 154 of 160 captures (the six without a stage: /lcxos,
+    /select, /portal).
+  · Pipeline hero, light panel 91 → 86 %: the two captures are identical inside the hero; the page under it changed (the
+    watch fixture adds a line below the figure and the top bar). Cause not isolated; recorded, not tuned. Orrery 80 → 79,
+    globe/vault/surface held.
+  · The desk routes are unchanged to the percent (± 1) with the plate's walls and chamfer now rendered and eight pucks on the
+    arc — the plate ceiling was not the constraint the walls were feared to be; dark median 33 → 35 %, ≥ 35 % on 34 → 38.
+  · /select and /lcxos are measurable for the first time (the Forge honours the off switch): dark visible 72 → 74, light 77 → 79 of 79.
+
+
+gate: root ci-check clean on run 6 (runs 1–4: reliefRedrawRatchet ×2, gl-budget p0 README byte figure, reliefFallback arc form — each fixed above; run 5 was the web workspace's gate by a drifted shell cwd — one stage, refused by the five-stage count); 0 npm error, 0 unhandled: 57/1997 · 19/368 · 170(+1 skipped)/3532(+14 skipped) · 209/2816 · 2/20 · web build 5.35s · REAL initial 1312KB (JS 761/850 · CSS 117/140 · fonts 434/440) · largest chunk 359/440 · passthrough 1025/1152 · 210 lazy page chunks

@@ -1,3 +1,5 @@
+import { parseGlb } from '@lcx/gl/env/gltf.js';
+import { linearToHex } from '@lcx/gl/look/colour.js';
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -23,7 +25,10 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEB = resolve(SRC, '..');
 const ROOT = resolve(WEB, '../..');
 const OBJECTS = join(WEB, 'public/objects');
-const BUDGET_KB = 300; // the plan's S7 headroom on the 1024 KB passthrough budget (722 KB used before S7)
+/* 300 → 448 on 2026-09-04 (THE PRODUCTION P6): the Forge as a machined mesh, `forge.glb` (160,520 B + sidecar), joined the
+   stills and the environment maps; public/objects measured 302.3 KB with it. The passthrough budget rose 1024 → 1152 in
+   check-bundle.mjs for the same bytes, so the objects' share of it is stated here as 448 (≈ 130 KB of headroom for P7). */
+const BUDGET_KB = 448;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const n of readdirSync(dir)) {
@@ -96,5 +101,45 @@ describe('the object — rendered, calibrated, budgeted', () => {
     }
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     expect(JSON.stringify(pkg.scripts ?? {})).not.toMatch(/blender/);
+  });
+
+  /* THE MACHINED OBJECTS (P6). A .glb ships under the same rule as a .webp: nothing without its evidence. The sidecar
+     is written by scripts/blender/export_gltf.py at export time — bytes must equal the file (a re-export without its
+     sidecar fails here), the view transform is Standard like every other object in this directory, and the mark was
+     actually engraved (the polygon count is read from lcx-mark.svg, never assumed). */
+  const glbs = existsSync(OBJECTS) ? readdirSync(OBJECTS).filter((f) => f.endsWith('.glb')) : [];
+  it('every .glb carries an export sidecar whose bytes, transform and engraving are real', () => {
+    expect(glbs.length, 'the Forge mesh is not in public/objects').toBeGreaterThan(0);
+    for (const f of glbs) {
+      const side = join(OBJECTS, `${f}.render.json`);
+      expect(existsSync(side), `${f} has no .render.json sidecar`).toBe(true);
+      const j = JSON.parse(readFileSync(side, 'utf8'));
+      expect(j.bytes, `${f}: sidecar bytes ≠ file bytes — re-exported without its sidecar`).toBe(statSync(join(OBJECTS, f)).size);
+      expect(j.viewTransform).toBe('Standard');
+      expect(String(j.blender)).toMatch(/^5\./);
+      expect(j.meshes.length).toBeGreaterThanOrEqual(3);
+      for (const name of ['disc', 'ring', 'plinth']) expect(j.meshes.map((m: { name: string }) => m.name)).toContain(name);
+      expect(j.mark.polygons, 'the mark was not engraved').toBeGreaterThanOrEqual(1);
+      expect(j.mark.source).toBe('apps/web/public/lcx-mark.svg');
+    }
+  });
+
+  /* THE BRAND HEX FROM THE BYTES (P6 gate, the S7 rule applied to a mesh). The still's calibration reads a rendered patch;
+     a glb has no pixels, so the claim is decided on the material bytes the loader hands the engine: the ring's linear
+     baseColorFactor, encoded back through the engine's own sRGB transfer, must be the brand hex EXACTLY — and the
+     exporter's descriptive `brandHex` must agree with it, so the two cannot drift apart silently. */
+  it('the Forge glb carries the brand hex FROM THE BYTES: the ring decodes to #2C6BFF exactly', () => {
+    const buf = readFileSync(join(OBJECTS, 'forge.glb'));
+    const asset = parseGlb(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    expect(asset.kind).toBe('gltf');
+    if (asset.kind !== 'gltf') return;
+    const ring = asset.meshes.find((m) => m.name === 'ring');
+    expect(ring, 'no ring mesh').toBeTruthy();
+    const [r, g, b] = ring!.material.baseColor;
+    expect(linearToHex([r, g, b]).toUpperCase()).toBe('#2C6BFF');
+    expect(ring!.material.brandHex).toBe('#2C6BFF');
+    const disc = asset.meshes.find((m) => m.name === 'disc')!;
+    expect(linearToHex([...disc.material.baseColor] as [number, number, number]).toUpperCase()).toBe(disc.material.brandHex!.toUpperCase());
+    expect(asset.meshes.map((m) => m.name).sort()).toEqual(['disc', 'marker', 'plinth', 'ring']);
   });
 });

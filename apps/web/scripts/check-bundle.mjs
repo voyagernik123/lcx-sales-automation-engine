@@ -171,14 +171,19 @@ const MAX_INITIAL_KB = 850;
  */
 const MAX_BLOCKING_CSS_KB = 140;
 const MAX_PRELOADED_FONT_KB = 440;
-const MAX_PASSTHROUGH_KB = 1024;
+/* 1024 → 1152 on 2026-09-04 (THE PRODUCTION P6): what it bought is `public/objects/forge.glb`, the Forge as a machined
+   mesh (146,716 B, 11,356 triangles, KHR_mesh_quantization) plus its .render.json sidecar — fetched lazily by the
+   sign-in Forge after its first frame, never preloaded, so initial weight is unchanged. Measured before: 867 KB. */
+const MAX_PASSTHROUGH_KB = 1152;
 
 /** How close to MAX_INITIAL_KB counts as worth saying out loud. */
 const INITIAL_HEADROOM_WARN_KB = 25;
 
 // Chunks fetched on every page load (not code-split by route). These share the
 // stable names assigned in vite.config manualChunks + the Vite entry ("index").
-const INITIAL_PREFIXES = ['index-', 'vendor-', 'react-vendor-', 'icons-'];
+/* The hardcoded INITIAL_PREFIXES list was retired 2026-09-04: it read 762 KB against index.html's 760 and the checker
+   itself said "index.html wins". The initial set is exactly what index.html declares; the lazy page chunks are
+   everything else in assets/. One source of truth, and it cannot go stale. */
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(WEB, 'dist');
@@ -267,12 +272,9 @@ if (biggest && biggest.size > MAX_CHUNK_KB) {
 }
 
 // ── 2. Initial JS (unchanged budget, unchanged meaning). Measured from index.html now,
-//       but cross-checked against the prefix list: if the two disagree the prefix list
-//       has gone stale, and that is worth knowing before it silently reports 0.
+//       the set index.html declares is the initial set — nothing else is a source of truth for it.
 const initialJsKb = sumKb([...declared.entryJs, ...declared.moduleJs]);
-const prefixJsKb = jsFiles
-  .filter((f) => INITIAL_PREFIXES.some((p) => f.startsWith(p)))
-  .reduce((s, f) => s + kbOf(join(ASSETS, f)), 0);
+const initialJsNames = new Set([...declared.entryJs, ...declared.moduleJs].map((h) => basename(h)));
 if (initialJsKb > MAX_INITIAL_KB) {
   failures.push(`initial JS ${initialJsKb.toFixed(0)}KB > ${MAX_INITIAL_KB}KB budget`);
 }
@@ -321,7 +323,7 @@ if (passthroughKb > MAX_PASSTHROUGH_KB) {
 }
 
 const realInitialKb = initialJsKb + cssKb + fontKb;
-const pageChunks = jsFiles.filter((f) => !INITIAL_PREFIXES.some((p) => f.startsWith(p))).length;
+const pageChunks = jsFiles.filter((f) => !initialJsNames.has(f)).length;
 
 console.log(
   `perf budget · REAL initial ${realInitialKb.toFixed(0)}KB ` +
@@ -331,13 +333,6 @@ console.log(
     `passthrough ${passthroughKb.toFixed(0)}/${MAX_PASSTHROUGH_KB} · ${pageChunks} lazy page chunks`,
 );
 
-if (Math.abs(initialJsKb - prefixJsKb) > 1) {
-  console.warn(
-    `  ! the prefix list and index.html disagree on the initial JS set ` +
-      `(${prefixJsKb.toFixed(0)}KB vs ${initialJsKb.toFixed(0)}KB). index.html wins; ` +
-      `INITIAL_PREFIXES is stale and now only guards the per-chunk ceiling.`,
-  );
-}
 
 const headroom = MAX_INITIAL_KB - initialJsKb;
 if (headroom >= 0 && headroom < INITIAL_HEADROOM_WARN_KB) {

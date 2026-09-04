@@ -140,26 +140,69 @@ export function rectToNdc(rect: { x: number; y: number; w: number; h: number }, 
  * The slab whose top face is the quad (tl, tr, br, bl) at y = PLATE_Y, extruded down by PLATE_THICKNESS.
  * Positions are world; normals are computed so the bevel-free faces shade correctly under the key.
  */
-export function slabGeometry(top: readonly [Vec3, Vec3, Vec3, Vec3], thickness = PLATE_THICKNESS): Geometry {
-  const bottom = top.map(([x, y, z]) => [x, y - thickness, z] as Vec3) as unknown as readonly [Vec3, Vec3, Vec3, Vec3];
+/** The plate's edge profile (P6): how far the chamfer runs OUTWARD from the top face, and down. */
+export const PLATE_CHAMFER = 0.05;
+
+/**
+ * THE PLATE AS A MACHINED SLAB (P6). The top face is exactly the four corners handed in — it projects onto the DOM's
+ * main content rect and the glass/luminance contract (`STAGE_LUMINANCE_*`) is about THAT face, so the profile is cut
+ * OUTWARD: a 45° chamfer band runs from the top edge out and down by `chamfer`, then the walls fall from the band's
+ * outer edge to the bottom. The band catches the key light as a bright machined edge BESIDE the page — in the gutter
+ * the chrome fade leaves — and never under a glyph. A chamfer cut inward would have put that highlight under the page's
+ * edge text and the plate ceiling (0.04 dark) would have refused it.
+ *
+ * Ten faces, each with its own four vertices so each has its own normal: top, 4 chamfers, 4 walls, bottom.
+ */
+export function slabGeometry(top: readonly [Vec3, Vec3, Vec3, Vec3], thickness = PLATE_THICKNESS, chamfer = PLATE_CHAMFER): Geometry {
+  const c = Math.max(0, Math.min(chamfer, thickness * 0.9));
+  // Push each corner outward along both of its edges (the plate is a rectangle in the plane, so this is an exact offset).
+  const dir = (a: Vec3, b: Vec3): Vec3 => {
+    const dx = a[0] - b[0], dz = a[2] - b[2]; const l = Math.hypot(dx, dz) || 1; return [dx / l, 0, dz / l];
+  };
+  const outer = top.map((p, i) => {
+    const prev = top[(i + 3) % 4]!, next = top[(i + 1) % 4]!;
+    const d1 = dir(p, prev), d2 = dir(p, next);
+    return [p[0] + (d1[0] + d2[0]) * c, p[1] - c, p[2] + (d1[2] + d2[2]) * c] as Vec3;
+  }) as unknown as readonly [Vec3, Vec3, Vec3, Vec3];
+  const bottom = outer.map(([x, , z]) => [x, top[0]![1] - thickness, z] as Vec3) as unknown as readonly [Vec3, Vec3, Vec3, Vec3];
   const P: number[] = [];
   const push = (v: Vec3) => { P.push(v[0], v[1], v[2]); };
-  // 6 faces × 4 verts (duplicated so each face has its own normal)
   const faces: Vec3[][] = [
     [top[0], top[1], top[2], top[3]],                    // top
     [bottom[3], bottom[2], bottom[1], bottom[0]],        // bottom (reversed)
-    [top[3], top[2], bottom[2], bottom[3]],              // front (towards camera, +z side of the plate)
-    [top[1], top[0], bottom[0], bottom[1]],              // back
-    [top[0], top[3], bottom[3], bottom[0]],              // left
-    [top[2], top[1], bottom[1], bottom[2]],              // right
+    // chamfer band: top edge → outer edge, winding outward
+    [top[3], top[2], outer[2], outer[3]],                // front
+    [top[1], top[0], outer[0], outer[1]],                // back
+    [top[0], top[3], outer[3], outer[0]],                // left
+    [top[2], top[1], outer[1], outer[2]],                // right
+    // walls: outer edge → bottom
+    [outer[3], outer[2], bottom[2], bottom[3]],          // front
+    [outer[1], outer[0], bottom[0], bottom[1]],          // back
+    [outer[0], outer[3], bottom[3], bottom[0]],          // left
+    [outer[2], outer[1], bottom[1], bottom[2]],          // right
   ];
+  // OUTWARD BY CONSTRUCTION, NOT BY CONVENTION. Each face's winding is checked against the direction from the slab's
+  // centroid to the face's centroid under the engine's own `computeNormals`, and reversed when it points in. The first
+  // cut of this function wound every wall inward (its test read a −0.707 where +0.707 was claimed) and nothing had
+  // noticed, because the walls were never lit from a side anyone measured.
+  const centroid: [number, number, number] = [0, 0, 0];
+  faces.forEach((f) => f.forEach((v) => { centroid[0] += v[0] / 40; centroid[1] += v[1] / 40; centroid[2] += v[2] / 40; }));
+  const oriented = faces.map((f) => {
+    const pos = new Float32Array(f.flatMap((v) => [v[0], v[1], v[2]]));
+    const n = computeNormals(pos, new Uint16Array([0, 1, 2, 0, 2, 3]));
+    const fc: Vec3 = [(f[0]![0] + f[1]![0] + f[2]![0] + f[3]![0]) / 4, (f[0]![1] + f[1]![1] + f[2]![1] + f[3]![1]) / 4, (f[0]![2] + f[1]![2] + f[2]![2] + f[3]![2]) / 4];
+    const out = n[0]! * (fc[0] - centroid[0]) + n[1]! * (fc[1] - centroid[1]) + n[2]! * (fc[2] - centroid[2]);
+    return out < 0 ? [...f].reverse() : f;
+  });
   const I: number[] = [];
-  faces.forEach((f, k) => { f.forEach(push); const b = k * 4; I.push(b, b + 1, b + 2, b, b + 2, b + 3); });
+  oriented.forEach((f, k) => { f.forEach(push); const b = k * 4; I.push(b, b + 1, b + 2, b, b + 2, b + 3); });
   const positions = new Float32Array(P);
   const indices = new Uint16Array(I);
   const normals = computeNormals(positions, indices);
   const uvs = new Float32Array((positions.length / 3) * 2);
-  return { positions, normals, uvs, indices } as unknown as Geometry;
+  let min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k]!, positions[i + k]!); max[k] = Math.max(max[k]!, positions[i + k]!); }
+  return { positions, normals, uvs, tangents: new Float32Array(positions.length), indices, min, max };
 }
 
 /** The eight rooms, in the platform's order, on an arc behind the plate. */

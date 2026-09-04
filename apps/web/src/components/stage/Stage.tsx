@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { FORGE_GLB_URL } from '../brand/forgeObjects';
 import type { Target3D } from '@lcx/gl/env/target3d.js';
 import type { MeshBuffer } from '@lcx/gl/env/lit.js';
 import type { PointCloud } from '@lcx/gl/primitives/points.js';
@@ -44,6 +45,7 @@ type Mod = {
   plane: typeof import('@lcx/gl/env/mesh.js')['plane'];
   createLitRenderer: typeof import('@lcx/gl/env/lit.js')['createLitRenderer'];
   uploadMesh: typeof import('@lcx/gl/env/lit.js')['uploadMesh'];
+  parseGlb: typeof import('@lcx/gl/env/gltf.js')['parseGlb'];
   createTarget3D: typeof import('@lcx/gl/env/target3d.js')['createTarget3D'];
   createShadowMap: typeof import('@lcx/gl/env/target3d.js')['createShadowMap'];
   createSkyBackdrop: typeof import('@lcx/gl/env/sky.js')['createSkyBackdrop'];
@@ -94,8 +96,8 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       import('@lcx/gl/env/quality.js'), import('@lcx/gl/env/mesh.js'), import('@lcx/gl/env/lit.js'),
       import('@lcx/gl/env/target3d.js'), import('@lcx/gl/env/sky.js'), import('@lcx/gl/primitives/points.js'),
       import('@lcx/gl/env/camera.js'), import('@lcx/gl/look/theme.js'), import('@lcx/gl/env/stageScene.js'),
-      import('@lcx/gl/math.js'), import('@lcx/gl/motion/index.js'),
-    ]).then(([stg, col, pres, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo]) => {
+      import('@lcx/gl/math.js'), import('@lcx/gl/motion/index.js'), import('@lcx/gl/env/gltf.js'),
+    ]).then(([stg, col, pres, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo, gltf]) => {
       if (!alive) return;
       start({
         createStage: stg.createStage, isStage: stg.isStage, hexToLinear: col.hexToLinear,
@@ -105,7 +107,7 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
         createTarget3D: t3d.createTarget3D, createShadowMap: t3d.createShadowMap, createSkyBackdrop: sky.createSkyBackdrop,
         createPointCloud: pts.createPointCloud, eyeOf: cam.eyeOf, viewProjection: cam.viewProjection, nearFarOf: cam.nearFarOf,
         lightViewProjection: cam.lightViewProjection, sceneTheme: th.sceneTheme, scene, IDENTITY: mth.IDENTITY,
-        startMotion: mo.startMotion, easeInOut: mo.easeInOut,
+        startMotion: mo.startMotion, easeInOut: mo.easeInOut, parseGlb: gltf.parseGlb,
       });
     }).catch(() => { if (alive) setState('refused:LOAD_FAILED'); });
 
@@ -145,6 +147,10 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       let W = 1, H = 1, target: Target3D | null = null;
       let slab: MeshBuffer | null = null;
       let glows: PointCloud | null = null;
+      /* THE ROOM MARKERS (P6): a small machined puck under each room's glow, from the same /objects/forge.glb the sign-in
+         Forge draws (one asset, browser-cached after the first route that fetched it). Absent until it lands, absent for
+         good if it refuses — the glows alone are the P3 state and remain a complete frame. */
+      let markerMesh: MeshBuffer | null = null;
 
       const plateRect = () => {
         const el = document.querySelector<HTMLElement>(`[${plateAttr}]`);
@@ -241,7 +247,12 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
         const lightVP = g.lightViewProjection(light, [cx, g.scene.PLATE_Y, (top[0][2] + top[3][2]) / 2], 9);
         const draws = [
           { mesh: floorMesh, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.structure, roughness: 0.7, metalness: 0.05 } },
-          ...(slab ? [{ mesh: slab, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.plate, roughness: 0.28, metalness: 0.08 } }] : []),   // glossy enough to mirror the studio's front key (P3)
+          ...(slab ? [{ mesh: slab, model: g.IDENTITY(), normalMat: NM, material: { baseColour: theme.plate, roughness: 0.28, metalness: 0.08 } }] : []),
+          // Eight machined pucks on the arc, each under its room's glow (the glow point sits 3 cm above the puck's face).
+          ...(markerMesh ? positions.map((p) => {
+            const m = g.IDENTITY(); m[12] = p[0]; m[13] = 0.025; m[14] = p[2];
+            return { mesh: markerMesh!, model: m, normalMat: NM, material: { baseColour: theme.plate, roughness: 0.34, metalness: 0.55 } };
+          }) : []),   // glossy enough to mirror the studio's front key (P3)
         ];
         lit.shadowPass(lightVP, draws, shadow);
         target.bind();
@@ -278,6 +289,26 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       let pending = false;
       const invalidate = () => { if (pending) return; pending = true; queueMicrotask(() => { pending = false; draw(); }); };
       drawRef.current = invalidate;
+      void (async () => {
+        try {
+          const res = await fetch(FORGE_GLB_URL);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const bytes = await res.arrayBuffer();
+          if (!alive) return;
+          const asset = g.parseGlb(bytes);
+          if (asset.kind === 'refused') { host.dataset.markers = `refused: ${asset.reason}`; return; }
+          const marker = asset.meshes.find((m) => m.name === 'marker');
+          if (!marker) { host.dataset.markers = 'refused: forge.glb has no marker mesh'; return; }
+          const up = g.uploadMesh(stage, marker.geometry);
+          if ('kind' in up) { host.dataset.markers = `refused: ${up.reason}`; return; }
+          if (!alive) { up.dispose(); return; }
+          markerMesh = up;
+          host.dataset.markers = `glb ${asset.bytes} bytes · 8 pucks`;
+          invalidate();
+        } catch (e) {
+          if (alive) host.dataset.markers = `unavailable: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      })();
       /* THE REDRAW CONTRACT (P0 → P3). One forced synchronous frame, returning its own wall time in ms, so the instrument
          can report the stage's cost per route×theme and P8 can hold it under budget. Read by nothing in the product. */
       (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW = () => { const t0 = performance.now(); draw(); return performance.now() - t0; };
@@ -310,6 +341,7 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
       invalidate();
       dispose = () => { delete (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW; delete (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY; ro.disconnect(); mo.disconnect(); offFrame?.(); envReq++; if (env) gl.deleteTexture(env); glows?.dispose(); slab?.dispose(); target?.dispose(); presenter.dispose(); stage.dispose(); };
+        (markerMesh as MeshBuffer | null)?.dispose(); markerMesh = null;
       // THE INSTRUMENT'S IN-PLACE GL-OFF (P3): same page, second capture without GL. Dispose, blank the drawing buffer so
       // the page ground shows through, and name the state — the same refusal code a fresh createStage gives under
       // `__LCX_GL_OFF`. Nothing in the product dispatches this event.

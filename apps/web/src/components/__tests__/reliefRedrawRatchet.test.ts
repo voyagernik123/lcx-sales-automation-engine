@@ -421,6 +421,10 @@ function walk(root: string): string[] {
  * is `readonly number[]`, and would miss the first prop somebody declares as a branded string.
  */
 const isDataType = (t: string): boolean => {
+  /* A string-literal union is a MODE, not a subject (P6, 2026-09-04: ForgeBackdrop's `layer?: 'behind' | 'cover'` —
+     sign-in backdrop vs the /lcxos hero). Datasets are arrays and objects; the six shipping reliefs carry those.
+     Same rule as reliefTheme.test.tsx, so the two rosters agree on who carries data. */
+  if (/^'[^']*'(\s*\|\s*'[^']*')*$/.test(t.trim())) return false;
   const s = t.trim().replace(/\|\s*null$/, '').replace(/\|\s*undefined$/, '').trim();
   if (/^(number|boolean)$/.test(s)) return false;
   /* A function type: `(a: X) => Y`. Matched on the arrow rather than on the name, because these are inline. */

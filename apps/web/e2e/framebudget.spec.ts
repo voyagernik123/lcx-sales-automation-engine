@@ -193,6 +193,15 @@ test.describe('frame budget with the juice on', () => {
       result.idleDropped > 2,
       `idle control dropped ${result.idleDropped} frames — machine too loaded for this comparison to mean anything`,
     );
+    // THE GUARD ABOVE CANNOT FIRE WHEN THERE IS NOTHING TO DROP. CI run 33654022610 (2026-09-02) failed
+    // twice on a commit with no web change: the retry's idle control produced ONE frame at p50 1233 ms —
+    // a runner that was barely compositing — so idleDropped was 1, the guard stayed quiet, and the juiced
+    // figure (12 dropped of 16) was compared against a control that measured nothing. A control with too
+    // few frames is not a control either; the floor is 30 frames in the window (~0.5 s at 60 Hz).
+    test.skip(
+      result.idleN < 30,
+      `idle control produced ${result.idleN} frames (p50 ${result.idleP50}ms) — the runner is contended, not the page`,
+    );
 
     testInfo.annotations.push({
       type: 'measurement',

@@ -168,3 +168,5 @@ export { createDepthOfField } from './env/dof.js';
 export type { DepthOfField } from './env/dof.js';
 export type { AmbientOcclusion } from './env/ao.js';
 export type { SkyBackdrop, SkyOptions } from './env/sky.js';
+export { parseGlb, isGltfRefusal } from './env/gltf.js';
+export type { GltfAsset, GltfMesh, GltfMaterial, GltfRefusal } from './env/gltf.js';

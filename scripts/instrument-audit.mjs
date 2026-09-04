@@ -48,7 +48,7 @@ import { spawn, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DESK_ROUTES, allDeskFixtures } from './instrument-fixtures.mjs';
+import { DESK_ROUTES, allDeskFixtures, watchFixture } from './instrument-fixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'apps/web');
@@ -497,6 +497,12 @@ async function captureRoute(browser, route, theme, glOff = false) {
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ ok: true, service: 'lcx-sales-api', version: 'harness', env: 'instrument', db: 'up', timestamp: new Date(FROZEN_AT).toISOString(), node: 'harness' }),
     }));
+    // THE WATCH FIXTURE (P6): the shell polls /v1/watch on every route; aborted, the top bar carries a failure string in
+    // every capture (seen in the whole P5 record). Answered like health — on every route — with `since` echoed.
+    await page.route('**/v1/watch*', (r) => {
+      const since = new URL(r.request().url()).searchParams.get('since') ?? '';
+      r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(watchFixture(new Date(FROZEN_AT).toISOString(), since)) });
+    });
     if (FIXTURES && DESK_ROUTES.has(route.path)) {
       // Registered AFTER the abort: Playwright gives later handlers priority, so the floor stays the floor.
       for (const [glob, body] of allDeskFixtures(new Date(FROZEN_AT).toISOString())) await page.route(glob, (r) => r.fulfill(body()));
@@ -512,6 +518,7 @@ async function captureRoute(browser, route, theme, glOff = false) {
     // 11% and 38% in two runs with nothing changed. Wait (bounded) for the stage to say which map is bound, and RECORD it,
     // so a coverage number always says what frame it measured. GL-off runs have no stage and skip this.
     let stageEnv = null;
+    let objects = { markers: null, forge: null };
     if (route.seated && reached === 'REACHED' && !glOff) {
       await page.waitForFunction(
         () => !!globalThis.__LCX_STAGE_ENV_READY || (document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? '').startsWith('refused'),
@@ -519,6 +526,36 @@ async function captureRoute(browser, route, theme, glOff = false) {
       ).catch(() => {});
       await page.waitForTimeout(250);
       stageEnv = await page.evaluate(() => globalThis.__LCX_STAGE_ENV_READY ?? null).catch(() => null);
+    }
+    /* THE OBJECTS (P6) — for EVERY reached route, seated or not: the Forge lives on /select and /lcxos, which are unseated,
+       and the first version of this wait sat inside the seated branch above — so the two routes it was written for never
+       ran it, `objects.forge` was null in every capture, and the rest window caught the arrival arc's tail. */
+    if (reached === 'REACHED' && !glOff) {
+      /* THE OBJECTS (P6): the stage's markers and the Forge's machined meshes arrive from /objects/forge.glb AFTER the first
+      frame and write their outcome on the stage host (`data-markers`) / the Forge canvas (`data-objects`) — a success
+      string or a refusal in words. A capture taken before either exists measures the primitives-only frame and calls it
+      the record; wait, bounded, for the string wherever a stage or a Forge is present. Recorded per capture as `objects`. */
+      const tObj0 = Date.now();
+      await page.waitForFunction(() => {
+      const stage = document.querySelector('[data-stage]');
+      const forgeHost = document.querySelector('canvas[data-forge]');
+      const willForge = document.querySelector('[data-forge-mount]') !== null; // the mount says a Forge is coming before its lazy chunk lands
+      const stageDone = !stage || (stage.getAttribute('data-stage') ?? '').startsWith('refused') || stage.getAttribute('data-markers') !== null;
+      const forgeDone = !willForge || (forgeHost !== null && forgeHost.getAttribute('data-objects') !== null && forgeHost.getAttribute('data-arc') === 'done');
+      return stageDone && forgeDone;
+      }, undefined, { timeout: 12_000 }).catch(() => { /* recorded as pending, never as absent */ });
+      if (process.env.INSTRUMENT_DEBUG_OBJECTS) {
+      const d = await page.evaluate(() => ({ mount: document.querySelector('[data-forge-mount]')?.getAttribute('data-forge-mount') ?? null,
+      canvas: document.querySelectorAll('canvas').length, forgeCanvas: document.querySelector('canvas[data-forge]') !== null,
+      objects: document.querySelector('canvas[data-forge]')?.getAttribute('data-objects') ?? null, arc: document.querySelector('canvas[data-forge]')?.getAttribute('data-arc') ?? null,
+      stage: document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? null, markers: document.querySelector('[data-markers]')?.getAttribute('data-markers') ?? null })).catch((e) => ({ error: String(e) }));
+      console.error(`OBJECTS-DEBUG ${route.path} ${theme} ${Date.now() - tObj0} ms ${JSON.stringify(d)}`);
+      }
+      objects = await page.evaluate(() => ({
+      markers: document.querySelector('[data-markers]')?.getAttribute('data-markers') ?? null,
+      forge: document.querySelector('[data-objects]')?.getAttribute('data-objects') ?? null,
+      arc: document.querySelector('canvas[data-forge]')?.getAttribute('data-arc') ?? null,
+      })).catch(() => ({ markers: null, forge: null }));
     }
     // THE CONTENT RACE (P3, found by two identical probes disagreeing by 30 points on data pages): fixture responses and the
     // panels they fill can land before or after the capture, which moves how much of the plate is opaque card. Wait
@@ -676,7 +713,7 @@ async function captureRoute(browser, route, theme, glOff = false) {
     }
     if (glOff) return { theme, reached, png, glOff: true, domFp, ...quiet };
     // `animations` = at rest (before the navigation); the post-return count travels beside it, never as the finding.
-    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, heroRects, chromeFade, nav, pageErrors: errs.slice(0, 5), shot, png };
+    return { theme, reached, objects, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, heroRects, chromeFade, nav, pageErrors: errs.slice(0, 5), shot, png };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }

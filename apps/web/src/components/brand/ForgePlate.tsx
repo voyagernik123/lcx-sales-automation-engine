@@ -28,7 +28,7 @@ import { ForgeStill } from './ForgeStill';
 
 export function ForgePlate() {
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-20">
+    <div data-forge-mount="select" aria-hidden="true" className="pointer-events-none absolute inset-0 -z-20">
       {/* LIGHT: a cool studio sweep, bright enough that the navy type above it keeps its contrast. */}
       <div
         className="absolute inset-0 dark:hidden"

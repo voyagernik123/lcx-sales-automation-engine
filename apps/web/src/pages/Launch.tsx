@@ -1,9 +1,15 @@
+import { lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Download } from 'lucide-react';
 import { LcxMark } from '@/components/brand/LcxMark';
 import { ForgeStill } from '@/components/brand/ForgeStill';
 import { safeHref } from '@/lib/safeHref';
 import { LaunchServices } from '@/pages/LaunchServices';
+
+/* LAZY for the same reason SelectOperator's is: the renderer statically imported here would enter the shell chunk. */
+const ForgeBackdrop = lazy(() =>
+  import('@/components/brand/ForgeBackdrop').then((m) => ({ default: m.ForgeBackdrop })),
+);
 
 /**
  * The public face of LCXOS — the page the shared link opens.
@@ -146,8 +152,12 @@ export function Launch() {
         {/* THE OBJECT (S7 of INSTRUMENT_100X_PLAN). The Forge, rendered headless from E8's own numbers and
           * calibrated so the brand blue decodes from the bytes exactly; one WebP per theme, width and height
           * declared so nothing shifts when it arrives. Still — the arrival is the platform's only motion. */}
-        <figure className="mt-10 overflow-hidden rounded-xl border border-line/70 bg-card shadow-card">
+        {/* P6: the same object LIVE where the hardware allows — the machined mesh from /objects/forge.glb under the P3
+          * stack, drawn over the still inside this figure once its first frame is ready; the still stays where GL refuses
+          * (and is what search engines and the print sheet see). Lazy: the renderer never enters the shell chunk. */}
+        <figure data-forge-mount="hero" className="relative mt-10 overflow-hidden rounded-xl border border-line/70 bg-card shadow-card">
           <ForgeStill variant="hero" className="block h-auto w-full" />
+          <Suspense fallback={null}><ForgeBackdrop layer="cover" /></Suspense>
         </figure>
 
         {/* THE DOWNLOAD MOMENT.

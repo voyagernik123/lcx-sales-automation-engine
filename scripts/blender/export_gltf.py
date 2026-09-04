@@ -32,7 +32,11 @@ MATERIALS = {
     "disc":   ("#8FA3C4", 0.30, 0.95, 0.86),
     "ring":   ("#2C6BFF", 0.13, 0.92, 0.72),
     "plinth": {"dark": ("#161D2E", 0.52, 0.35, 0.0), "light": ("#B9C5D8", 0.52, 0.35, 0.0)},
+    # The stage's room markers (P6): a small machined puck, eight instances on the arc behind the plate. Drawn with the
+    # stage rig's structure albedo at runtime (stageScene.ts owns the material); this entry is descriptive.
+    "marker": ("#161D2E", 0.45, 0.6, 0.0),
 }
+MARKER = (0.18, 0.05)
 DISC = (0.92, 0.16); RING = (1.06, 0.055); PLINTH = (1.9, 0.09)  # radii/heights from ForgeBackdrop.tsx:461-463
 
 # ── geometry ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -110,7 +114,10 @@ def evaluated_mesh(ob):
                 nn = lo.vert.normal if smooth else n
                 # uv: cylindrical (angle, height) — the anisotropic tangent wants the circumferential direction.
                 ang = (math.atan2(p.y, p.x) / (2 * math.pi)) % 1.0
-                verts.append((p.x, p.y, p.z, nn.x, nn.y, nn.z, ang, p.z))
+                # BLENDER IS Z-UP, THE ENGINE IS Y-UP (mesh.ts: a cylinder's axis is y, caps at ±h/2). build_forge.py
+                # carries the inverse (`gl_to_blender`); this is the forward map, applied to positions AND normals:
+                # (x, y, z)_blender → (x, z, -y)_gl. Forgetting it lays the disc on its side — the first export did.
+                verts.append((p.x, p.z, -p.y, nn.x, nn.z, -nn.y, ang, p.z))
             tris.append(index[key])
     bm.free(); ev.to_mesh_clear()
     print(f"SPLIT {ob.name}: {split_by_angle} smooth loops split by angle; {len(verts)} vertices", file=sys.stderr)
@@ -139,7 +146,7 @@ def build_glb(objects, theme, generator):
         lo = (min(xs), min(ys), min(zs)); hi = (max(xs), max(ys), max(zs))
         pos = struct.pack(f"<{len(verts)*3}h", *[q16(v[c], lo[c], hi[c]) for v in verts for c in range(3)])
         nrm = struct.pack(f"<{len(verts)*3}b", *[max(-127, min(127, int(round(v[3 + c] * 127)))) for v in verts for c in range(3)])
-        uv = struct.pack(f"<{len(verts)*2}H", *[int(round(max(0.0, min(1.0, (v[6] if c == 0 else (v[7] - lo[2]) / max(1e-9, hi[2] - lo[2])))) * 65535)) for v in verts for c in range(2)])
+        uv = struct.pack(f"<{len(verts)*2}H", *[int(round(max(0.0, min(1.0, (v[6] if c == 0 else (v[7] - lo[1]) / max(1e-9, hi[1] - lo[1])))) * 65535)) for v in verts for c in range(2)])
         idx = struct.pack(f"<{len(tris)}H", *tris)
         p_acc = push(pos, 5122, len(verts), "VEC3", True, [-1, -1, -1], [1, 1, 1])
         n_acc = push(nrm, 5120, len(verts), "VEC3", True)
@@ -176,11 +183,12 @@ def main():
     ring = add_torus("ring", RING[0], RING[1], RING[1], 128, 16)  # tube r .055: 16 segs → facets .02 units, below one device px at render scale
     plinth = add_cylinder("plinth", PLINTH[0], PLINTH[1], -PLINTH[1] / 2, 128, bevel_width=0.03, bevel_segments=a.bevel_segments)
     cutters = engrave_mark(disc, a.svg, DISC[0], a.mark_depth)
-    for ob in (disc, ring, plinth):
+    marker = add_cylinder("marker", MARKER[0], MARKER[1], 0.0, 64, bevel_width=0.008, bevel_segments=3)
+    for ob in (disc, ring, plinth, marker):
         for poly in ob.data.polygons: poly.use_smooth = True
     objects = []
     plinth_mat = MATERIALS["plinth"][a.theme]
-    for ob, mat in ((disc, MATERIALS["disc"]), (ring, MATERIALS["ring"]), (plinth, plinth_mat)):
+    for ob, mat in ((disc, MATERIALS["disc"]), (ring, MATERIALS["ring"]), (plinth, plinth_mat), (marker, MATERIALS["marker"])):
         verts, tris = evaluated_mesh(ob)
         if len(verts) > 65535: raise SystemExit(f"{ob.name}: {len(verts)} vertices exceed uint16 indices")
         objects.append((ob.name, verts, tris, mat))

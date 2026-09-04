@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { FORGE_GLB_URL, swapForgeMeshes } from './forgeObjects';
 /* The tier only; no `@lcx/gl` runtime import comes with it — see that module's header on why it takes
    `pickQualityTier` as an argument rather than importing it. Static-importing the package here once pushed the
    shell chunk to 441 KB against a 440 KB ceiling. */
@@ -72,6 +73,7 @@ interface GlMod {
   readonly torus: typeof import('@lcx/gl/env/mesh.js')['torus'];
   readonly createLitRenderer: typeof import('@lcx/gl/env/lit.js')['createLitRenderer'];
   readonly uploadMesh: typeof import('@lcx/gl/env/lit.js')['uploadMesh'];
+  readonly parseGlb: typeof import('@lcx/gl/env/gltf.js')['parseGlb'];
   readonly createTarget3D: typeof import('@lcx/gl/env/target3d.js')['createTarget3D'];
   readonly createShadowMap: typeof import('@lcx/gl/env/target3d.js')['createShadowMap'];
   readonly createSkyBackdrop: typeof import('@lcx/gl/env/sky.js')['createSkyBackdrop'];
@@ -292,9 +294,13 @@ export function forgeRig(dark: boolean, m: ExposureMath): ForgeRig {
 export interface ForgeBackdropProps {
   /** Set on the sign-in screen. Kept as a prop so a marketing page can dial it back. */
   readonly intensity?: number;
+  /* Where the canvas sits relative to its siblings. `behind` (default) is the sign-in: the form floats over the object.
+     `cover` is the /lcxos hero (P6): the canvas lies OVER the S7 still inside the figure and replaces it pixel-for-pixel
+     once the first frame is ready — the still is what remains where GL refuses. */
+  readonly layer?: 'behind' | 'cover';
 }
 
-export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
+export function ForgeBackdrop({ intensity = 1, layer = 'behind' }: ForgeBackdropProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
@@ -303,6 +309,11 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
   const [, setReason] = useState<string | null>(null);
   const rafRef = useRef<number | null>(null);
   const disposeRef = useRef<(() => void) | null>(null);
+  /* `layer` is read through a ref so it never sits in the effect's dependency list: a mount is either the sign-in
+     backdrop or the /lcxos hero for its whole life, and rebuilding a GL context because a prop changed is exactly what
+     reliefRedrawRatchet forbids. A changed layer would apply on the next mount, which is the only time it can change. */
+  const layerRef = useRef(layer);
+  layerRef.current = layer;
 
   useEffect(() => {
     let alive = true;
@@ -326,7 +337,8 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
       import('@lcx/gl/env/dof.js'),
       import('@lcx/gl/env/camera.js'),
       import('@lcx/gl/look/precompensate.js'),
-    ]).then(([stg, mth, col, tm, q, mesh, lit, t3d, sky, ao, dof, cam, pre]) => {
+      import('@lcx/gl/env/gltf.js'),
+    ]).then(([stg, mth, col, tm, q, mesh, lit, t3d, sky, ao, dof, cam, pre, gltf]) => {
       if (!alive) return;
       start({
         createStage: stg.createStage, isStage: stg.isStage,
@@ -335,7 +347,7 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
         TONE_MAP_GLSL: tm.TONE_MAP_GLSL, SRGB_ENCODE_GLSL: tm.SRGB_ENCODE_GLSL,
         qualitySettings: q.qualitySettings, shadowMapSizeFor: q.shadowMapSizeFor,
         plane: mesh.plane, cylinder: mesh.cylinder, torus: mesh.torus,
-        createLitRenderer: lit.createLitRenderer, uploadMesh: lit.uploadMesh,
+        createLitRenderer: lit.createLitRenderer, uploadMesh: lit.uploadMesh, parseGlb: gltf.parseGlb,
         createTarget3D: t3d.createTarget3D, createShadowMap: t3d.createShadowMap,
         createSkyBackdrop: sky.createSkyBackdrop,
         createAmbientOcclusion: ao.createAmbientOcclusion,
@@ -471,6 +483,18 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const [discM, ringM, plinthM, floorM] = uploaded as Array<
         Exclude<ReturnType<GlMod['uploadMesh']>, { kind: 'refused' }>
       >;
+      /*
+       * THE OBJECTS (THE PRODUCTION P6). The four primitives above are the FIRST FRAME — the same shapes the S7 still
+       * was rendered from, so nothing waits on a fetch and the still and the live frame agree from the first pixel.
+       * The machined meshes (bevels, the LCX mark engraved into the disc) arrive from /objects/forge.glb, parsed by the
+       * engine's own loader, and REPLACE three buffers in place while the materials stay HERE, per theme
+       * (anisoPreserved.test.ts pins them). `parts` is the one mutable seam: `buildDraws` reads it every frame, so a
+       * swap is visible on the next frame with no other state. A refusal (fetch, parse, upload) leaves the primitives
+       * standing and is written on the canvas for the instrument to read — never a black frame, never a partial swap
+       * (forgeObjects.ts refuses those as a unit).
+       */
+      type Mesh = Exclude<ReturnType<GlMod['uploadMesh']>, { kind: 'refused' }>;
+      const parts: { disc: Mesh; ring: Mesh; plinth: Mesh } = { disc: discM!, ring: ringM!, plinth: plinthM! };
 
       const at = (x: number, y: number, z: number) => {
         const m = gl3.IDENTITY(); m[12] = x; m[13] = y; m[14] = z; return m;
@@ -484,9 +508,9 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
           /* THE SAME CONSTANT THE EXPOSURE SOLVE READS. Inlining the hex here again is how the
              solve and the surface it is solving for would come to disagree. */
           material: { baseColour: gl3.hexToLinear(dark ? GROUND.dark : GROUND.light), roughness: 0.88, metalness: 0 } },
-        { mesh: plinthM!, model: at(0, 0.045, 0), normalMat: NM,
+        { mesh: parts.plinth, model: at(0, 0.045, 0), normalMat: NM,
           material: { baseColour: gl3.hexToLinear(dark ? '#161D2E' : '#AEBACD'), roughness: 0.52, metalness: 0.35 } },
-        { mesh: discM!, model: at(0, DISC_Y, 0), normalMat: NM,
+        { mesh: parts.disc, model: at(0, DISC_Y, 0), normalMat: NM,
           /* GUNMETAL in light mode: #8FA3C4 against a white studio is white-on-white and the
              object dissolves. Dark mode keeps the brighter alloy because it needs to lift off a
              near-black room. Same object, different ground, different value. */
@@ -510,7 +534,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
            * Pinned by `packages/gl/src/env/anisoPreserved.test.ts`.
            */
           material: { baseColour: gl3.hexToLinear(dark ? '#8FA3C4' : '#5E6C85'), roughness: 0.5477, metalness: 0.95, anisotropy: 0.86 } },
-        { mesh: ringM!, model: at(0, DISC_Y, 0), normalMat: NM,
+        { mesh: parts.ring, model: at(0, DISC_Y, 0), normalMat: NM,
           material: { baseColour: gl3.hexToLinear('#2C6BFF'), roughness: 0.3606, metalness: 0.92, anisotropy: 0.72 } },
       ];
 
@@ -524,13 +548,18 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
        * machined plinth the form floats above and is cropped by the bottom edge. Nothing the
        * operator has to read sits over anything bright.
        */
-      const view = {
-        /* y 2.35 rather than 1.55: at 1.55 the disc's specular highlight sat directly under the
-           status footer and made "LOCAL / API DOWN / UTC" hard to read. Nothing an operator has to
-           read may sit over anything bright — the object is cropped by the bottom edge instead. */
-        target: [0, 2.35, 0] as const, distance: 6.2,
-        azimuthDeg: 22, elevationDeg: 14, fovDeg: 34,
-      };
+      const view = layerRef.current === 'cover'
+        /* THE STILL'S OWN CAMERA (build_forge.py:133 ← docs/3d/e8/entry.ts:257): target (0, 0.34, 0), distance 5.0,
+           azimuth 22°, elevation 24°, vertical fov 30°. The /lcxos hero lies OVER the S7 still, so the live frame must
+           land on the still's framing — same object, same eye — or the swap reads as a jump. */
+        ? { target: [0, 0.34, 0] as const, distance: 5.0, azimuthDeg: 22, elevationDeg: 24, fovDeg: 30 }
+        : {
+          /* y 2.35 rather than 1.55: at 1.55 the disc's specular highlight sat directly under the
+             status footer and made "LOCAL / API DOWN / UTC" hard to read. Nothing an operator has to
+             read may sit over anything bright — the object is cropped by the bottom edge instead. */
+          target: [0, 2.35, 0] as const, distance: 6.2,
+          azimuthDeg: 22, elevationDeg: 14, fovDeg: 34,
+        };
       const centre = gl3.boundsCentre([-2, 0, -2], [2, 0.55, 2]);
       const radius = gl3.boundsRadius([-2, 0, -2], [2, 0.55, 2]);
       const near = Math.max(0.01, view.distance / 100);
@@ -612,13 +641,43 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         // consent from a reader who never gave it.
         : true;
 
+      const forceOff = () => { disposeRef.current?.(); disposeRef.current = null; canvas.style.display = 'none'; canvas.dataset.forceOff = '1'; };
       const teardown = () => {
+        window.removeEventListener('lcx:gl-force-off', forceOff);
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
         D?.dispose(); A?.dispose(); K.dispose(); S.dispose(); T.dispose(); R.dispose();
         stage.dispose();
       };
       disposeRef.current = teardown;
+      /* THE INSTRUMENT'S OFF SWITCH (P5 → P6). The shell's stage disposes on `lcx:gl-force-off` so a capture pair can be
+         read from ONE page load; the Forge did not, so /select's pair was identical and its coverage read 0 in every
+         sweep. Same contract here: dispose, hide the canvas, and the still beneath is the OFF frame. */
+      window.addEventListener('lcx:gl-force-off', forceOff, { once: true });
+
+      /* The glb is fetched AFTER the first frame is scheduled and never preloaded: initial weight is unchanged and the
+         sign-in never waits on it (the plan's "no eager bytes"). `alive` is the effect's own flag, so a swap can never
+         land on a torn-down stage; a late upload is disposed rather than kept. */
+      void (async () => {
+        try {
+          const res = await fetch(FORGE_GLB_URL);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const bytes = await res.arrayBuffer();
+          if (!alive) return;
+          const asset = gl3.parseGlb(bytes);
+          if (asset.kind === 'refused') { canvas.dataset.objects = `refused: ${asset.reason}`; return; }
+          const swapped = swapForgeMeshes<Mesh>(asset, (g) => gl3.uploadMesh(stage, g));
+          if ('kind' in swapped) { canvas.dataset.objects = `refused: ${swapped.reason}`; return; }
+          if (!alive) { swapped.disc.dispose(); swapped.ring.dispose(); swapped.plinth.dispose(); return; }
+          const old = { ...parts };
+          parts.disc = swapped.disc; parts.ring = swapped.ring; parts.plinth = swapped.plinth;
+          old.disc.dispose(); old.ring.dispose(); old.plinth.dispose();
+          canvas.dataset.objects = `glb ${asset.bytes} bytes · ${asset.meshes.map((m) => m.name).join(',')}`;
+          if (rafRef.current == null) render(1);
+        } catch (e) {
+          if (alive) canvas.dataset.objects = `unavailable: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      })();
 
       /*
        * A THEME CHANGE AFTER THE SWEEP HAS FINISHED HAS NO FRAME LOOP TO PICK IT UP. The arc stops
@@ -631,6 +690,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const stopWatch = () => themeWatch.disconnect();
 
       if (reduced) {
+        canvas.dataset.arc = 'done';
         render(1);
         setReady(true);
         disposeRef.current = () => { stopWatch(); teardown(); };
@@ -645,7 +705,13 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         // STOPS. No trailing rAF once the arc completes — see the header on rule 2.
         if (t < 1) rafRef.current = requestAnimationFrame(step);
         else rafRef.current = null;
+        // The arc says when it has ended (P6): the instrument waits for `done` before its rest window, so the arc's
+        // own tail is never read as idle motion. Set after the stop, which reliefFallback reads in that exact form.
+        if (t >= 1) canvas.dataset.arc = 'done';
       };
+      /* THE ARC IS BOUNDED (SWEEP_MS) AND SAYS SO: the instrument's rest window on /lcxos read 14 rAF/s — the arc's tail,
+         not idle motion — because nothing told it when the arc ended. `data-arc` does; it waits for `done`. */
+      canvas.dataset.arc = 'running';
       rafRef.current = requestAnimationFrame(step);
       disposeRef.current = () => { stopWatch(); teardown(); };
     }
@@ -659,13 +725,15 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
   }, [intensity]);
 
   return (
-    <div ref={hostRef} aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <div ref={hostRef} aria-hidden="true" className={`pointer-events-none absolute inset-0 overflow-hidden print:hidden ${layer === 'cover' ? 'z-0' : '-z-10'}`}>
       {/* NO PLATE HERE. `ForgePlate` owns it and paints on the first frame, before this chunk has
           even been fetched — duplicating the gradient in two files is how they drift apart. */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full"
         style={{ display: ready ? 'block' : 'none' }}
+        data-forge="live"
+        data-layer={layer}
       />
     </div>
   );

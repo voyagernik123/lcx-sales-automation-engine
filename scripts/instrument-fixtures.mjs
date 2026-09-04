@@ -391,3 +391,25 @@ export function deskChartFixtures(frozenAtIso) {
 export function allDeskFixtures(frozenAtIso) {
   return [...Object.values(deskFixtures(frozenAtIso)).flat(), ...heroFixtures(frozenAtIso), ...deskChartFixtures(frozenAtIso)];
 }
+
+/* THE WATCH (P6, 2026-09-04). `useArrival.ts` polls `/v1/watch?since=…` on EVERY shell route; with the endpoint aborted
+   the top bar reads "WATCH The watch is unavailable — Failed to fetch. Last looked never." in every P5 capture and in
+   the gallery. Infrastructure-shaped like health, so it is answered on every route, not only the fixtured desks. The
+   shape is `WatchResponse` (packages/shared/src/watch.ts): `since` echoed verbatim, items ranked and capped, per-room
+   summaries for the rooms the operator holds, `unranked` as a count, `absent` sentences for what could not be seen —
+   the API refuses empty items + empty absent, so the fixture never produces that pair either. */
+export function watchFixture(frozenAtIso, since) {
+  const item = (id, workspace, kind, rank, title, detail, href, source) =>
+    ({ id, workspace, kind, rank, title, detail, href, at: frozenAtIso, source });
+  const items = [
+    item('w-1', 'sales', 'money', 0, 'Probe Chain 02 moved to Negotiation', 'Value $130K · stage changed by the seated operator', '/deal-desk', 'audit'),
+    item('w-2', 'regulatory', 'deadline', 1, 'MiCA transitional window: 41 days', 'Deadline read from the regulatory record', '/regulatory-dashboard', 'table'),
+    item('w-3', 'distribution', 'activity', 2, 'Campaign draft awaiting review', 'Deterministic fixture for the harness', '/distribution/campaigns', 'notification'),
+  ];
+  const byWorkspace = {
+    sales: { changed: 2, top: items[0] },
+    regulatory: { changed: 1, top: items[1] },
+    distribution: { changed: 1, top: items[2] },
+  };
+  return { data: { since, asOf: frozenAtIso, items, byWorkspace, unranked: 0, absent: [] } };
+}

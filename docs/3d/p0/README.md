@@ -35,7 +35,7 @@ after any change to `risk-cloud.html` or to `THREEJS_BYTES`.
 | Question | Measured | Consequence |
 |---|---|---|
 <!-- gl-budget:begin p0-verdict -->
-| three.js, tree-shaken to what S1 actually needs | **513.3 KB raw** (525,595 B, esbuild, minified, no gzip) — a **pinned** measurement from the P0 gate, held in `docs/3d/p1/build.mjs` and read from there; `three` is not a dependency, so it cannot be re-measured here | **Breaches two budgets at once.** `MAX_CHUNK_KB` is 440; it is 513.3 KB against an initial-JS ceiling of 850; passthrough allows 1024. There is no configuration of the budget that admits it. |
+| three.js, tree-shaken to what S1 actually needs | **513.3 KB raw** (525,595 B, esbuild, minified, no gzip) — a **pinned** measurement from the P0 gate, held in `docs/3d/p1/build.mjs` and read from there; `three` is not a dependency, so it cannot be re-measured here | **Breaches two budgets at once.** `MAX_CHUNK_KB` is 440; it is 513.3 KB against an initial-JS ceiling of 850; passthrough allows 1152. There is no configuration of the budget that admits it. |
 | The hand-written renderer that produced the PNG | **11.1 KB** minified (11410 B; 18.7 KB / 19115 B of source, comments and all) | **46.1× smaller** than the library it replaces, on the same esbuild settings, and it fits inside the existing headroom without touching the budget. |
 <!-- gl-budget:end p0-verdict -->
 | Headless capture, 10,000 instanced quads + 5 post passes, SwiftShader (no GPU) | **1.9–2.4 s** end to end, cold browser launch included | Fast enough to run per-commit if we choose to. On a real GPU the frame cost is a small fraction of this; the wall-clock here is dominated by Chromium start-up. |

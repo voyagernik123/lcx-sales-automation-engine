@@ -167,7 +167,12 @@ const OWNERS: readonly Owner[] = walk(COMPONENTS)
         const m = /readonly\s+\w+\??\s*:\s*(.+?);\s*$/.exec(l);
         if (!m) return false;
         const t = m[1]!.trim();
-        return !/^number$/.test(t) && !/=>/.test(t) && !/^string$/.test(t) && !/^boolean$/.test(t);
+        /* A string-literal union is a MODE, not a subject: P6 (2026-09-04) gave ForgeBackdrop
+           `layer?: 'behind' | 'cover'` (sign-in backdrop vs the /lcxos hero over the still) and this
+           classifier read it as a dataset, then demanded sceneTheme() of a surface whose rig is the
+           reference the themed ones were calibrated against. Datasets are arrays and objects. */
+        const literalUnion = /^'[^']*'(\s*\|\s*'[^']*')*$/.test(t);
+        return !/^number$/.test(t) && !/=>/.test(t) && !/^string$/.test(t) && !/^boolean$/.test(t) && !literalUnion;
       }),
   }));
 
