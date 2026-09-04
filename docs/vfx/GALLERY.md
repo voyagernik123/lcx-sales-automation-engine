@@ -1,6 +1,6 @@
-# THE PRODUCTION — GALLERY · P8 · HARDENING: 2×, narrow, context loss, reduced motion, paper — measured on the host GPU
+# THE PRODUCTION — GALLERY · P9 · THE PRODUCTION GATE: the final sweep — every route, both themes, beside the P0 baseline
 
-> HEAD `8b2773a` · run 2026-09-04T08:52:50.139Z · 80 routes × 2 themes, captured as shipped and with every GL layer forced off
+> HEAD `36c69aa` · run 2026-09-04T10:34:59.976Z · 80 routes × 2 themes, captured as shipped and with every GL layer forced off
 > (`window.__LCX_GL_OFF` → `createStage` refuses `FORCED_OFF_FOR_MEASUREMENT`; relief preferences seeded off).
 > **GL coverage** = share of viewport pixels that differ between the two captures (any channel > 8/255). This is the
 > number that says whether the 3D is VISIBLE on a route. The controls: a known 40% GL area reads 40% ± 1; identical
@@ -145,7 +145,7 @@
 | `/ai-tools` | ![shipped](gallery/ai_tools-light-on.webp) | ![GL off](gallery/ai_tools-light-off.webp) | **44%** | 5.0 |
 | `/outreach-ops` | ![shipped](gallery/outreach_ops-light-on.webp) | ![GL off](gallery/outreach_ops-light-off.webp) | **49%** | 5.4 |
 | `/deal-desk` | ![shipped](gallery/deal_desk-light-on.webp) | ![GL off](gallery/deal_desk-light-off.webp) | **23%** | 6.5 |
-| `/integrations` | ![shipped](gallery/integrations-light-on.webp) | ![GL off](gallery/integrations-light-off.webp) | **22%** | 7.1 |
+| `/integrations` | ![shipped](gallery/integrations-light-on.webp) | ![GL off](gallery/integrations-light-off.webp) | **28%** | 8.3 |
 | `/board-report` | ![shipped](gallery/board_report-light-on.webp) | ![GL off](gallery/board_report-light-off.webp) | **54%** | 4.9 |
 | `/market-news` | ![shipped](gallery/market_news-light-on.webp) | ![GL off](gallery/market_news-light-off.webp) | **42%** | 5.0 |
 | `/report-builder` | ![shipped](gallery/report_builder-light-on.webp) | ![GL off](gallery/report_builder-light-off.webp) | **52%** | 4.9 |
@@ -181,3 +181,16 @@
 | `/command-ops` | ![shipped](gallery/command_ops-light-on.webp) | ![GL off](gallery/command_ops-light-off.webp) | **59%** | 6.0 |
 | `/cheat-card` | ![shipped](gallery/cheat_card-light-on.webp) | ![GL off](gallery/cheat_card-light-off.webp) | **24%** | 6.8 |
 | `/practice` | ![shipped](gallery/practice-light-on.webp) | ![GL off](gallery/practice-light-off.webp) | **21%** | 7.0 |
+
+## Beside the P0 baseline
+
+The same instrument, the same 80 routes, the same two themes, before the program (production-p0) and at its end (production-p9).
+Coverage is the share of viewport pixels that differ between the GL-on and GL-off captures of one page load; "visible" is coverage > 5 %.
+
+| theme | P0 (before) | P9 (final) |
+|---|---|---|
+| dark | 3 of 79 · median 0 % · ≥ 35 % on 2 | 74 of 80 · median 34 % · ≥ 35 % on 37 |
+| light | 4 of 79 · median 0 % · ≥ 35 % on 2 | 79 of 80 · median 43 % · ≥ 35 % on 47 |
+
+What changed between the two columns is in docs/vfx/SCORECARD.md, promise by promise, with the record each number is read from; what the
+eye should look for is in docs/vfx/WALKTHROUGH.md. Every phase's own gallery and BASELINE live under docs/instrument/audit/production-pN.

@@ -1,4 +1,4 @@
-# THE PRODUCTION — SCORECARD (DRAFT, opened 2026-09-04 during P7; closed at P9)
+# THE PRODUCTION — SCORECARD (closed 2026-09-04 at P9; opened during P7)
 
 One line per promise in VFX_PRODUCTION_PLAN.md: **met** (measured, live), **short** (measured, below the stated target, with the
 number), or **refused by design** (with the reason). Nothing here is a multiplier or an adjective; every entry names the record
@@ -6,6 +6,7 @@ number), or **refused by design** (with the reason). Nothing here is a multiplie
 
 | Phase | Promise | Verdict | The number, and where it is read from |
 |---|---|---|---|
+| P0 → P9 | The whole arc, same instrument, same controls | measured | dark: GL visible 3 of 79 → 74 of 80, median 0 % → 34 %, ≥ 35 % on 2 → 37 · light: 4 of 79 → 79 of 80, median 0 % → 43 %, ≥ 35 % on 2 → 47 (production-p0 vs production-p9) |
 | P0 | The instrument: every route, both themes, GL coverage measured against a validated visibility control | met | 79 routes × 2 themes per sweep; visibility control: a known 40 % area reads 40.0 % (ΔE 99.4), identical captures 0 % — every BASELINE |
 | P1 | One stage behind every route (the room, the plate, the rooms' glows) | met | Stage.tsx mounted once in the shell; GL contexts 77 → 79 of 79 routes (P6 record) |
 | P2 | Per-room framing; edge model from the stage's own rig | met | 530f0d9; STAGE_LIGHT-derived edge tokens (oneMaterial.test) |
@@ -30,7 +31,7 @@ number), or **refused by design** (with the reason). Nothing here is a multiplie
 | P8 | Narrow / mobile framings | measured | at 768 px all six routes reach (after the instrument's shell anchor moved off the footer text the narrow layout hides): /lcxos 34/37 %, /select 91/93, /tasks 36/49, /market-map 25/33 (globe .63/.78), /bd-kpis 14/19, /command-deck 20/28; the surface relief sits below the fold at 768 (panel 0/.29 — off-screen, not refused); arrival 3/3 everywhere |
 | P8 | Print pins | met | both GL hosts print:hidden, pinned from source (glHostsPrintHidden.test) |
 | P8 | `verify-app-renders.mjs`: every route renders or says why, at 1× and 2×, wide and narrow, reduced motion, context lost | met, reduced matrix stated | 80/80 routes at 1× wide; 12/12 on the six-route subset at 2× and 768; reduced 3/3; context lost → restored 3/3 (the deck needs > 1.5 s to rebuild; bounded wait). The 320-page full matrix was stopped at ~50 s/page |
-| P9 | Final sweep, gallery, this scorecard closed, desktop at the same build, walkthrough | pending | |
+| P9 | Final sweep, gallery, this scorecard closed, desktop at the same build, walkthrough | met (desktop release follows this commit) | production-p9: equals the P8 record to the point (dark 74/79 · 34 %, light 79/79 · 43 %, arrival 154/154, errors 0); GALLERY.md regenerated with P0's figures as the reference; WALKTHROUGH.md; desktop v0.5.0 in the release commit |
 
 ## Refused by design (standing)
 - No idle motion anywhere: no pulse, spin, breath, marching edge — the redraw ratchet and `oneWatch.test` hold it; the arrival is the only motion and it stops.

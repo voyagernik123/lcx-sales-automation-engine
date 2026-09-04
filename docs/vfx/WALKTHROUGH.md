@@ -1,4 +1,4 @@
-# THE PRODUCTION — a two-minute walkthrough (draft opened 2026-09-04 in P8; closed at P9)
+# THE PRODUCTION — a two-minute walkthrough (closed 2026-09-04 at P9)
 
 Open these, in this order, on https://lcx-sales-automation-engine.pages.dev. Each line says what to LOOK AT and which record backs it.
 Judge by what you see; the numbers are there so the seeing can be checked.

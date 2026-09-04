@@ -1,5 +1,6 @@
 #!/bin/bash
 # Live verification by CONTENT, not by "the deploy finished".
+export PATH=/Library/Developer/CommandLineTools/usr/bin:$PATH
 #   verify-live.sh <full-sha> [--js 'needle']... [--css 'needle']... [--css-absent 'needle']...
 # Pages: every --js needle must appear in SOME deployed JS asset; every --css needle must appear in
 # SOME deployed CSS asset; every --css-absent needle must appear in NO deployed CSS asset (a deletion
