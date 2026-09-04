@@ -38,3 +38,35 @@ narrow/mobile framings; print pins for every new token. Gate: every ratchet gree
    or a hero's ready flag) OR a refusal string in words; at 1× and 2×; narrow and wide; and once with the context lost.
    Exit non-zero on any silent blank. Runs in the gate? Too slow (minutes) — runs in CI's e2e job and before every push in
    the release checklist; the ledger states which.
+
+## Anchors (read 2026-09-04, during the P7 sweep)
+- Stage.tsx:123 `const canvas = canvasRef.current, host = hostRef.current;` · :130 `g.createStage(canvas, { alpha: false })` · :131 refusal →
+  `setState(\`refused:${code}\`)` · :138 `bail(reason)` disposes · :367 `forceOff` (the instrument's off switch) sets
+  `refused:FORCED_OFF_FOR_MEASUREMENT`. Context loss goes beside forceOff: `canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); … setState('refused:CONTEXT_LOST') })`
+  and `webglcontextrestored` → re-run `start(g)` once (g is in scope; `dispose` the old stage first).
+- useQualityTier.ts: `probeSync(gl)` (reads a pixel from the drawn framebuffer), `measureFrameMs(...)`, `recordQualityProbe({...})` (first
+  recording wins), `isSoftwareRasteriser(gl)` (refuses a 60 Hz headroom figure on swiftshader — the instrument IS swiftshader, so the 2× frame-time
+  budget is measured on the M1 by a separate probe run, never by the sweep), `qualityTierReport()`.
+- Instrument: `captureRoute` opens `browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1, … })` at :478 — the DPR/narrow pass
+  parametrises exactly these two fields (`INSTRUMENT_DPR`, `INSTRUMENT_VIEWPORT=768x1100`) and writes to its own OUT_DIR.
+- Print: `styles/gpsPrint.css` (+ component-level `@media print` in LegalPositionStamp, DealReviewMemo). The Forge is `print:hidden` (P6); the
+  stage host (Stage.tsx:358 `<div … data-stage>`) is NOT yet — add `print:hidden` there in P8 and pin it in the print test.
+
+## Added from P6/P7's CI (2026-09-04)
+- keyboardday.spec.ts:719 (`f` collapses the deck traversal): reads Decide's bounding box right after `End` scrolls the MainContent scroller, then expects a hint chip at that box. On slow runners (juicedP50 33–50 ms) the smooth scroll is still settling and the chip lands elsewhere → "expected one chip beside Decide, got []". Failed on 83af9c4 and 8fc1206, passed on rerun both times. FIX: wait until the scroller's `scrollTop` is unchanged across two animation frames before reading the box (a settle-wait, not a longer timeout); the same guard belongs in `keys.scrollWithKey`.
+
+- Route table: DERIVED from apps/web/src/router.tsx by a regex parse in scripts/instrument-audit.mjs:260–273 (`routes.push({ path, probe, component, module, seated })`, refusing under 60 routes as a drift guard). P8 lifts that parse into `scripts/instrument-routes.mjs` (`export function routesFromRouter()`) so `verify-app-renders.mjs` and the instrument read ONE list; the draft verifier in the session scratchpad imports a JSON that does not exist — switch it to the .mjs export when applying.
+
+## Drafts staged (session scratchpad `p8/`, 2026-09-04 — re-derive from this note if the session is gone)
+- `instrument-routes.mjs` — `routesFromRouter(srcDir)` lifted from instrument-audit.mjs:261–275 verbatim, throws under 60; proven: 80 routes,
+  77 seated, unseated /lcxos, /portal, /select. `patch_instrument_routes.py` makes the instrument call it.
+- `verify-app-renders.mjs` — every route × DPR {1,2} × width {1440,768}; seats an operator, answers health + watch, desk fixtures; verdict per
+  capture: OK / BLANK / NO-TEXT, and with `--lose-context`: SILENT-ON-LOSS / NO-RECOVERY (uses WEBGL_lose_context on the stage canvas,
+  restore after 400 ms, expects `data-stage` to say `refused:…` during and `drawn` after). Exit 1 on any failure.
+- `patch_stage_contextloss.py` — after `createStage` in Stage.tsx: `webglcontextlost` → preventDefault + `refused:CONTEXT_LOST` (+ a
+  `data-context-lost` counter on the host); `webglcontextrestored` → dispose + `start(g)` once. Also `print:hidden` on the stage host.
+- `patch_instrument_dpr.py` — `INSTRUMENT_DPR`, `INSTRUMENT_VIEWPORT=WxH` env → the page's deviceScaleFactor/viewport (check `heroRects`
+  scaling by DPR by hand before trusting panel percentages at 2×).
+- `patch_keyboardday_settle.py` — the scroll-settle wait before Decide's box is read (two unchanged rAF reads of the scroller's scrollTop).
+Order after P7 is LIVE: routes module → verifier → context loss (+ its instrument check) → DPR/narrow pass over the hero + desk subset →
+memory ceilings → glass floors re-measured on the P7 record → print pins → gate → commit → push → verify → P8 LIVE.

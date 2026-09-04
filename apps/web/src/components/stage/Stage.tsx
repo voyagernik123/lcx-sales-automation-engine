@@ -79,14 +79,22 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
   const location = useLocation();
   const revealed = useArrivalStore((s) => s.revealed);
   const watch = useArrivalStore((s) => s.watch);
+  const sweeping = useArrivalStore((s) => s.sweeping);
   const entitlements = useAccessStore((s) => s.me?.entitlements ?? null);
   const drawRef = useRef<(() => void) | null>(null);
+  /* draw() runs inside a setup effect with [] deps (the redraw ratchet), so anything it reads from the render scope is
+     frozen at mount. The watch arrives by fetch AFTER mount: read through refs written on every render, never the
+     captured values — since P3 the glows had been drawn from a `watch` that was null for the life of the mount. */
+  const watchRef = useRef(watch); watchRef.current = watch;
+  const entitlementsRef = useRef(entitlements); entitlementsRef.current = entitlements;
+  const revealedRef = useRef(revealed); revealedRef.current = revealed;
+  const sweepingRef = useRef(sweeping); sweepingRef.current = sweeping;
 
   // Anything that changes what the stage should show asks for exactly one new frame — and a route change asks
   // for a MOVE when the workspace changed (P2), a cut when it did not.
   const moveRef = useRef<((room: string | null) => void) | null>(null);
   useEffect(() => { moveRef.current?.(workspaceForPath(location.pathname)); }, [location.pathname]);
-  useEffect(() => { drawRef.current?.(); }, [revealed, watch, entitlements]);
+  useEffect(() => { drawRef.current?.(); }, [revealed, watch, sweeping, entitlements]);
 
   useEffect(() => {
     let alive = true;
@@ -191,6 +199,8 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       };
 
       const draw = () => {
+        /* P7 · a read-only frame counter for the instrument: the arrival must be a BOUNDED sequence (steps === items, frames ≤ items + 2). Nothing in the product reads it. */
+        (globalThis as { __LCX_STAGE_FRAMES?: number }).__LCX_STAGE_FRAMES = ((globalThis as { __LCX_STAGE_FRAMES?: number }).__LCX_STAGE_FRAMES ?? 0) + 1;
         if (!alive) return;
         size();
         if (!target) return;
@@ -225,12 +235,19 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
         const here = room;
         const centres: number[] = [], attrs: number[] = [];
         g.scene.ROOM_ORDER.forEach((roomId, i) => {
-          const held = entitlements ? Object.prototype.hasOwnProperty.call(entitlements, roomId) : true;
-          const changed = held ? (watch?.byWorkspace?.[roomId]?.changed ?? 0) : null;
+          const ents = entitlementsRef.current;
+          const held = ents ? Object.prototype.hasOwnProperty.call(ents, roomId) : true;
+          const changed = held ? (watchRef.current?.byWorkspace?.[roomId]?.changed ?? 0) : null;
           const glow = g.scene.roomGlow({ changed, here: false });
           // The entered room's +0.25 eases in with the arrival rather than snapping.
           if (here === roomId) { glow.intensity = Math.min(1, glow.intensity + 0.25 * arrival); glow.size += 0.3 * arrival; }
           if (glow.size === 0) return;
+          /* P7 · THE TRUTH ARRIVING AS LIGHT. A room lights on the heartbeat step its first ranked item is revealed — the
+             same step the ticker turns over on — and blooms once on that step; the unranked tail lights when the sweep is
+             over. Discrete by design: the frames between steps would be a scheduled animation, which the ratchet refuses. */
+          const lit = g.scene.roomLitAt(roomId, changed, watchRef.current, revealedRef.current, sweepingRef.current);
+          if (!lit.lit) return;
+          if (lit.justLit) { glow.size *= g.scene.ROOM_BLOOM.size; glow.intensity = Math.min(1, glow.intensity * g.scene.ROOM_BLOOM.intensity); }
           const p = positions[i]!;
           centres.push(p[0], p[1] + 0.02, p[2]);
           attrs.push(glow.intensity, 0);
@@ -340,7 +357,7 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       const mo = new MutationObserver(invalidate);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
       invalidate();
-      dispose = () => { delete (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW; delete (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY; ro.disconnect(); mo.disconnect(); offFrame?.(); envReq++; if (env) gl.deleteTexture(env); glows?.dispose(); slab?.dispose(); target?.dispose(); presenter.dispose(); stage.dispose(); };
+      dispose = () => { delete (globalThis as { __LCX_STAGE_FRAMES?: number }).__LCX_STAGE_FRAMES; delete (globalThis as { __LCX_STAGE_REDRAW?: () => number }).__LCX_STAGE_REDRAW; delete (globalThis as { __LCX_STAGE_ENV_READY?: string }).__LCX_STAGE_ENV_READY; ro.disconnect(); mo.disconnect(); offFrame?.(); envReq++; if (env) gl.deleteTexture(env); glows?.dispose(); slab?.dispose(); target?.dispose(); presenter.dispose(); stage.dispose(); };
         (markerMesh as MeshBuffer | null)?.dispose(); markerMesh = null;
       // THE INSTRUMENT'S IN-PLACE GL-OFF (P3): same page, second capture without GL. Dispose, blank the drawing buffer so
       // the page ground shows through, and name the state — the same refusal code a fresh createStage gives under

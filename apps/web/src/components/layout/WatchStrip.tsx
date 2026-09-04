@@ -52,7 +52,7 @@ export function WatchStrip() {
   const kinds = WATCH_RANK.filter((k) => watch.items.some((it) => it.kind === k));
 
   return (
-    <div className="flex min-w-0 items-center gap-3 font-mono text-[10px]" data-testid="watch-strip" data-sweeping={sweeping ? '1' : '0'}>
+    <div className="flex min-w-0 items-center gap-3 font-mono text-[10px]" data-testid="watch-strip" data-sweeping={sweeping ? '1' : '0'} data-revealed={revealed} data-items={watch.items.length}>
       <span
         className="shrink-0 font-bold uppercase tracking-wider text-grey"
         title={since ? `Since you last looked, ${stamp(since)}` : 'First arrival — the last 24 hours'}

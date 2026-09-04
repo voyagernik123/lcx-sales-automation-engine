@@ -1,0 +1,80 @@
+feat(vfx): P7 LIVENESS — the truth arriving as light: the rooms light in rank order on the arrival sweep, measured as one bounded sequence
+
+THE PRODUCTION (VFX_PRODUCTION_PLAN.md) P7, on P6 (8fc1206). The plan's line: "on arrival the rooms that changed light up in rank
+order across the stage, the changed figures bloom once, the ticker turns over; then everything is perfectly still until the next
+change. Nothing pulses, spins or breathes."
+
+WHAT YOU WILL SEE
+  On arrival (a fresh session, or a return after five minutes away) the ticker in the top bar reveals the watch's ranked items one
+  per heartbeat — money, liability, deadline, activity — and, on the SAME heartbeat, the room each item belongs to lights on the
+  stage behind the page, blooming once as it lights and settling on the next step. Rooms with change but no ranked item light when
+  the sweep ends. Then nothing moves. The charts' arrival bloom (P5) and the figures' deltas (S6) are the same choreography's
+  other surfaces.
+  SEEN (docs/vfx/p7/stage-after-arrival-command-deck-dark.png — the bare stage, DOM hidden, after the sweep): bright pools under
+  the rooms the watch ranked (sales, regulatory, distribution), the quiet glow P3 gives every held room under the other five, dark under
+  none that is held. Before P7 (stage-before-p7-tasks-dark.png) every held room wore the SAME glow whatever had changed, because
+  draw() never saw the watch at all (THE DEFECT below); the light said nothing.
+
+THE MECHANISM — no new loop, no new clock
+  · ONE sequence already existed: `useArrivalStore` steps `revealed` one item per heartbeat bucket (every(ARRIVAL_STEP_MS)) and the
+    WatchStrip turns over on it. The stage now reads that counter: `roomLitAt(room, changed, watch, revealed, sweeping)` in
+    stageScene.ts (pure; 4 tests: no watch → the P3 frame, rank order, the unranked tail, the bloom step) decides whether a room's
+    glow is drawn and whether this is the step it lit on (ROOM_BLOOM ×1.35 size, ×1.25 intensity, clamped under the glow bound).
+    Discrete by design: frames BETWEEN steps would be a scheduled animation, which the redraw ratchet refuses.
+
+THE DEFECT THIS FIXES (P3): Stage.tsx's draw() read `watch` and `entitlements` from the closure captured at MOUNT (the setup
+  effect has [] deps, rightly). The watch arrives by fetch after mount, so inside draw it was null for the life of the mount, and the
+  redraw effect that fired on arrival redrew with the stale values. "Glows sized by the watch" had only ever held when the stage
+  happened to mount after the watch had arrived. draw() now reads watch/entitlements/revealed/sweeping through refs written on
+  every render — the mechanism the ratchet prescribes.
+
+THE RATCHET EXTENDED — measured, not asserted
+  · The instrument's clock is CONTROLLED, not merely frozen: FREEZE_ENV exposes `__lcxClockAdvance(ms)`; after the watch arrives the
+    instrument advances the clock ARRIVAL_STEP_MS at a time and lets the real heartbeat deliver each step, until the strip reports
+    rest (bounded at items + 2). Under the frozen clock the sweep sat at 0 for ever (smoke: items 3, steps 0, sweeping true) — the
+    first version of this measurement would have read "no room ever lights" as the record.
+  · Per capture: `arrival = { items, steps, sweeping, frames, clockSteps, framesDuringSweep }` from the strip's data-items /
+    data-revealed / data-sweeping and a read-only `__LCX_STAGE_FRAMES` counter (draw() increments; disposed with the stage).
+    Bounded means steps === items and framesDuringSweep ≤ items + 1. Smoke, /command-deck, both themes: items 3 · steps 3 ·
+    clockSteps 3 · framesDuringSweep 3 · rAF at rest 0.
+  · The objects wait also waits for the sweep to end before the rest window, so "at rest" is after the arrival, never during it.
+
+THE RECORD'S FIRST RUN FOUND A DESIGN ERROR (docs/vfx/p7/run1-fill.txt)
+  Run 1 held the arrival gate — 154/154 captures complete, frames ≤ items+1 (worst 3), rAF loops 1 → 0 — and read dark GL visible
+  74 → 72, median 35 → 30 %, ≥ 35 % on 38 → 20. Cause: `roomLitAt` returned unlit for a held room with no change, removing P3's quiet
+  glow (roomGlow .22) from five of eight rooms on every route. The arrival had been written as lighting the changed rooms INSTEAD of
+  the room. Corrected before the commit: a quiet held room keeps its glow from the first frame; the arrival lights changed rooms in
+  rank order on top of it; unheld rooms stay unlit (5 tests). The record below is run 2, on the corrected tree.
+
+MEASURED (run 2)
+  THE SWEEP (docs/instrument/audit/production-p7; 79 routes × 2 themes, fixtures incl. heroes and desk charts, one-page-load pairs,
+    warm-up 80 routes / 324 s):
+    dark: GL visible on 74 → 79 of 79 · median 35% → 35% · ≥ 50% on 2 → 2 · ≥ 35% on 38 → 39 · ≥ 20% on 52 → 51
+    light: GL visible on 79 → 79 of 79 · median 44% → 43% · ≥ 50% on 35 → 34 · ≥ 35% on 48 → 47 · ≥ 20% on 60 → 60
+    DESK ROUTES (P6 → P7; "figures" says whether content rendered — with the fixtures the desks are opaque cards over the plate):
+    /bd-kpis               dark  10% →  11% · light  21% →  21% · figures 40 · errors 0
+    /win-loss              dark  12% →  12% · light  20% →  19% · figures 35 · errors 0
+    /forecast              dark   7% →   8% · light  14% →  14% · figures 50 · errors 0
+    /scorecard             dark  22% →  23% · light  30% →  29% · figures 26 · errors 0
+    /command-deck          dark  29% →  29% · light  36% →  35% · figures 37 · errors 0
+    /bd-pipeline           dark  27% →  27% · light  53% →  52% · figures 18 · errors 0
+    /command               dark  18% →  19% · light  35% →  34% · figures 94 · errors 0
+    /regulatory-dashboard  dark   7% →   7% · light  14% →  14% · figures 80 · errors 0
+    /distribution          dark  22% →  22% · light  35% →  34% · figures 62 · errors 0
+    /marketing             dark  31% →  31% · light  44% →  43% · figures 11 · errors 0
+    /gps                   dark  14% →  14% · light  27% →  26% · figures 14 · errors 0
+    /wbr                   dark  17% →  17% · light  25% →  25% · figures 50 · errors 0
+    Hero panels held: orrery 79%/83% · pipeline 43%/86% · globe 65%/81% · vault 31%/87% · storm —/— · surface 83%/92%. Chrome-fade text hits: 0. Stage redraw: n 154, median 3.9 ms, p90 4.2, max 5.5, over 8: 0.
+    Standing: continuity 77 → 77 · motion at rest 0 → 0 · max intervals 2 → 2 · rAF loops 1 → 0 · GL contexts 79 → 79 · page errors 0 → 0.
+    THE ARRIVAL (P7): 154 captures saw the watch arrive with 3 ranked items · sweep complete at rest (steps === items) on 154 · frames during the sweep ≤ items+1 on 154 (worst 3) · rAF at rest: see Standing
+  READ HONESTLY.
+  · Dark GL visible 74 → 79 of 79: with the Forge's arc awaited (P6's data-arc) and the arrival awaited, every route's pair is
+    measurable in dark for the first time; the median holds at 35 % and ≥ 35 % moves 38 → 39 with the quiet glow restored.
+  · rAF loops at rest 1 → 0: the P6 record's one loop was the Forge arc caught mid-arc; the instrument now waits for the arc AND
+    the sweep before its rest window. Nothing in the product changed for this number.
+  · /gps figures 54 → 14: fewer content figures had rendered at capture on that desk — a content race under fixtures, the class
+    P3 named; its coverage is unchanged (14 %). Recorded, not chased in this phase.
+  · Hero panels held to the point (vault dark 30 → 31, light 88 → 87). Redraw median 3.9 ms, max 5.5.
+
+
+gate: root ci-check clean on run 2 (run 1 was stopped: it ran on the tree before the quiet-glow correction); 0 npm error, 0 unhandled: 57/1997 · 20/373 · 170(+1 skipped)/3532(+14 skipped) · 209/2816 · 2/20 · web build 5.68s · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 359/440 · passthrough 1025/1152 · 210 lazy page chunks

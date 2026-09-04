@@ -235,3 +235,35 @@ export function roomGlow(state: RoomState): { size: number; intensity: number } 
   const change = Math.min(1, Math.log1p(state.changed) / Math.log1p(12));
   return { size: 0.9 + change * 1.6 + (state.here ? 0.3 : 0), intensity: Math.min(1, 0.22 + change * 0.78 + (state.here ? 0.25 : 0)) };
 }
+
+/* ── THE ARRIVAL ON THE STAGE (P7) ─────────────────────────────────────────────────────────────────────────────── */
+export interface ArrivalItemLike { readonly workspace: string }
+export interface ArrivalWatchLike { readonly items: readonly ArrivalItemLike[] }
+
+export interface RoomLit {
+  /** Draw this room's glow at all on this step. */
+  readonly lit: boolean;
+  /** This is the step the room lit on — draw it once at its bloom size; the next step settles. */
+  readonly justLit: boolean;
+}
+
+export function roomLitAt(
+  room: string,
+  changed: number | null,
+  watch: ArrivalWatchLike | null,
+  revealed: number,
+  sweeping: boolean,
+): RoomLit {
+  if (changed === null) return { lit: false, justLit: false };          // an unheld room is unlit (P3)
+  if (changed === 0) return { lit: true, justLit: false };              // a quiet held room keeps its quiet glow (roomGlow .22, P3) — the
+                                                                        // first cut removed it and the dark median fell 35 → 30 %: the
+                                                                        // arrival lights the CHANGED rooms on top of the room, not instead of it
+  if (watch === null) return { lit: true, justLit: false };
+  const first = watch.items.findIndex((it) => it.workspace === room);
+  if (first < 0) return { lit: !sweeping, justLit: false };
+  const lit = revealed > first;
+  return { lit, justLit: lit && revealed === first + 1 && sweeping };
+}
+
+/** The bloom-once factors for the step a room lights on; bounded so roomGlow's luminance ceiling still holds after them. */
+export const ROOM_BLOOM = { size: 1.35, intensity: 1.25 } as const;

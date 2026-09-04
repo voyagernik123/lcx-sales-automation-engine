@@ -84,10 +84,14 @@ const FROZEN_SEED = 0x5CE7A1;
 const FREEZE_ENV = (f) => {
   const w = /** @type {any} */ (globalThis);
   const RealDate = w.Date;
+  /* A CONTROLLED clock, not merely a frozen one (P7): every rendered date is deterministic, AND the instrument may advance
+     it in heartbeat steps so the arrival sweep — which buckets on `now()` — can run to completion under measurement. */
+  let at = f.at;
+  w.__lcxClockAdvance = (ms) => { at += ms; return at; };
   w.Date = new Proxy(RealDate, {
-    apply: () => new RealDate(f.at).toString(),
-    construct: (t, args, nt) => Reflect.construct(t, args.length === 0 ? [f.at] : args, nt),
-    get: (t, p, r) => (p === 'now' ? () => f.at : Reflect.get(t, p, r)),
+    apply: () => new RealDate(at).toString(),
+    construct: (t, args, nt) => Reflect.construct(t, args.length === 0 ? [at] : args, nt),
+    get: (t, p, r) => (p === 'now' ? () => at : Reflect.get(t, p, r)),
   });
   let s = f.seed >>> 0;
   const rnd = () => {
@@ -519,6 +523,7 @@ async function captureRoute(browser, route, theme, glOff = false) {
     // so a coverage number always says what frame it measured. GL-off runs have no stage and skip this.
     let stageEnv = null;
     let objects = { markers: null, forge: null };
+    let objectsSweep = { clockSteps: 0, framesDuringSweep: 0 };
     if (route.seated && reached === 'REACHED' && !glOff) {
       await page.waitForFunction(
         () => !!globalThis.__LCX_STAGE_ENV_READY || (document.querySelector('[data-stage]')?.getAttribute('data-stage') ?? '').startsWith('refused'),
@@ -542,8 +547,30 @@ async function captureRoute(browser, route, theme, glOff = false) {
       const willForge = document.querySelector('[data-forge-mount]') !== null; // the mount says a Forge is coming before its lazy chunk lands
       const stageDone = !stage || (stage.getAttribute('data-stage') ?? '').startsWith('refused') || stage.getAttribute('data-markers') !== null;
       const forgeDone = !willForge || (forgeHost !== null && forgeHost.getAttribute('data-objects') !== null && forgeHost.getAttribute('data-arc') === 'done');
-      return stageDone && forgeDone;
+      const strip = document.querySelector('[data-testid="watch-strip"]');
+  const sweepDone = !strip || strip.getAttribute('data-sweeping') !== '1';
+  return stageDone && forgeDone && sweepDone;
       }, undefined, { timeout: 12_000 }).catch(() => { /* recorded as pending, never as absent */ });
+      /* THE ARRIVAL SWEEP UNDER A CONTROLLED CLOCK (P7). The strip reveals one ranked item per heartbeat bucket of `now()`;
+         with Date frozen the bucket never moves and the sweep sits at 0 for ever (measured: items 3, steps 0, sweeping true).
+         Advance the clock ARRIVAL_STEP_MS at a time and let the real 250 ms heartbeat interval deliver each step; stop when
+         the strip reports rest, bounded at items + 2 steps. Stage frames drawn meanwhile are the sequence's cost. */
+      const sweep0 = await page.evaluate(() => {
+        const strip = document.querySelector('[data-testid="watch-strip"]');
+        return { sweeping: strip?.getAttribute('data-sweeping') === '1', items: Number(strip?.getAttribute('data-items') ?? 0), frames: globalThis.__LCX_STAGE_FRAMES ?? 0 };
+      }).catch(() => ({ sweeping: false, items: 0, frames: 0 }));
+      let sweepSteps = 0;
+      if (sweep0.sweeping) {
+        for (let k = 0; k < sweep0.items + 2; k++) {
+          await page.evaluate(() => globalThis.__lcxClockAdvance?.(250));
+          await page.waitForTimeout(320);
+          sweepSteps += 1;
+          const done = await page.evaluate(() => document.querySelector('[data-testid="watch-strip"]')?.getAttribute('data-sweeping') !== '1').catch(() => true);
+          if (done) break;
+        }
+      }
+      const sweepFrames = await page.evaluate(() => globalThis.__LCX_STAGE_FRAMES ?? 0).catch(() => 0);
+      objectsSweep = { clockSteps: sweepSteps, framesDuringSweep: sweep0.sweeping ? sweepFrames - sweep0.frames : 0 };
       if (process.env.INSTRUMENT_DEBUG_OBJECTS) {
       const d = await page.evaluate(() => ({ mount: document.querySelector('[data-forge-mount]')?.getAttribute('data-forge-mount') ?? null,
       canvas: document.querySelectorAll('canvas').length, forgeCanvas: document.querySelector('canvas[data-forge]') !== null,
@@ -555,7 +582,10 @@ async function captureRoute(browser, route, theme, glOff = false) {
       markers: document.querySelector('[data-markers]')?.getAttribute('data-markers') ?? null,
       forge: document.querySelector('[data-objects]')?.getAttribute('data-objects') ?? null,
       arc: document.querySelector('canvas[data-forge]')?.getAttribute('data-arc') ?? null,
+  /* P7 · THE ARRIVAL AS ONE BOUNDED SEQUENCE: items the watch ranked, steps the strip revealed at rest, stage frames drawn. */
+  arrival: (() => { const strip = document.querySelector('[data-testid="watch-strip"]'); return strip ? { items: Number(strip.getAttribute('data-items')), steps: Number(strip.getAttribute('data-revealed')), sweeping: strip.getAttribute('data-sweeping') === '1', frames: globalThis.__LCX_STAGE_FRAMES ?? null } : null; })(),
       })).catch(() => ({ markers: null, forge: null }));
+      if (objects && objects.arrival) objects.arrival = { ...objects.arrival, ...objectsSweep };
     }
     // THE CONTENT RACE (P3, found by two identical probes disagreeing by 30 points on data pages): fixture responses and the
     // panels they fill can land before or after the capture, which moves how much of the plate is opaque card. Wait

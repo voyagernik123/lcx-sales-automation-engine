@@ -1,0 +1,20 @@
+  THE SWEEP (docs/instrument/audit/production-p5; 79 routes × 2 themes, fixtures incl. heroes and desk charts, one-page-load pairs,
+    warm-up 80 routes / 170 s):
+    dark: GL visible on 74 → 72 of 79 · median 35% → 30% · ≥ 50% on 2 → 2 · ≥ 35% on 38 → 20 · ≥ 20% on 52 → 51
+    light: GL visible on 79 → 79 of 79 · median 44% → 43% · ≥ 50% on 35 → 34 · ≥ 35% on 48 → 47 · ≥ 20% on 60 → 60
+    DESK ROUTES (P6 → P7; "figures" says whether content rendered — with the fixtures the desks are opaque cards over the plate):
+    /bd-kpis               dark  10% →   7% · light  21% →  21% · figures 40 · errors 0
+    /win-loss              dark  12% →  10% · light  20% →  19% · figures 35 · errors 0
+    /forecast              dark   7% →   7% · light  14% →  14% · figures 50 · errors 0
+    /scorecard             dark  22% →  21% · light  30% →  29% · figures 26 · errors 0
+    /command-deck          dark  29% →  28% · light  36% →  35% · figures 33 · errors 0
+    /bd-pipeline           dark  27% →  27% · light  53% →  52% · figures 18 · errors 0
+    /command               dark  18% →  16% · light  35% →  34% · figures 94 · errors 0
+    /regulatory-dashboard  dark   7% →   7% · light  14% →  14% · figures 80 · errors 0
+    /distribution          dark  22% →  21% · light  35% →  34% · figures 62 · errors 0
+    /marketing             dark  31% →  31% · light  44% →  43% · figures 11 · errors 0
+    /gps                   dark  14% →  14% · light  27% →  26% · figures 54 · errors 0
+    /wbr                   dark  17% →  17% · light  25% →  25% · figures 50 · errors 0
+    Hero panels held: orrery 79%/83% · pipeline 43%/86% · globe 65%/81% · vault 30%/88% · storm —/— · surface 83%/92%. Chrome-fade text hits: 0. Stage redraw: n 154, median 3.9 ms, p90 4.2, max 5.3, over 8: 0.
+    Standing: continuity 77 → 77 · motion at rest 0 → 0 · max intervals 2 → 2 · rAF loops 1 → 0 · GL contexts 79 → 79 · page errors 0 → 0.
+    THE ARRIVAL (P7): 154 captures saw the watch arrive with 3 ranked items · sweep complete at rest (steps === items) on 154 · frames during the sweep ≤ items+1 on 154 (worst 3) · rAF at rest: see Standing
