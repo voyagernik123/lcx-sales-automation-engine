@@ -310,11 +310,11 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
                         <td className="py-1.5 pr-2 font-mono">{SOURCE_LABEL[c.source]}</td>
                         <td className="pr-2">
                           <span className="font-bold text-navy">{c.projectName}</span>
-                          {c.url !== null && <span className="block text-grey">{c.url}</span>}
+                          {c.url !== null && <span className="block break-all text-grey">{c.url}</span>}
                           {c.jurisdiction !== null && <span className="block text-grey">{c.jurisdiction}</span>}
                         </td>
                         <td className="pr-2 font-mono">{c.offerHypothesis}</td>
-                        <td className="max-w-[24rem] pr-2 text-grey-dark">
+                        <td className="max-w-[24rem] pr-2 text-grey-dark [overflow-wrap:anywhere]">
                           {c.reason}
                           {c.snippet !== null && <span className="mt-0.5 block border-l-2 border-line pl-1 text-grey">“{c.snippet}”</span>}
                           {c.status === 'refused' && c.refusalReason !== null && (
@@ -326,9 +326,9 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
                         </td>
                         <td className="pr-2"><Badge status={GRADE_STATUS[c.provenanceGrade]}>{c.provenanceGrade}</Badge></td>
                         <td className="pr-2 font-mono">{c.status}</td>
-                        <td className="whitespace-nowrap">
+                        <td className="min-w-[9rem]">
                           {c.status === 'proposed' && (
-                            <span className="flex gap-1">
+                            <span className="flex flex-wrap gap-1">
                               <Button onClick={() => void promote(c.id)} disabled={busy !== null}>Promote</Button>
                               <Button variant="secondary" onClick={() => { setRefuseFor(c.id); setRefuseReason(''); }} disabled={busy !== null}>
                                 Refuse…

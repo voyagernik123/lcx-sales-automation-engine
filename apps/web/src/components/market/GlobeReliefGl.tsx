@@ -51,6 +51,7 @@
  *   · THE TWELVE PLACEHOLDER CITIES. They were a siting mechanism proven on real city coordinates that
  *     were never a claim about LCX's corridor. This file has a real book and no cities.
  */
+import { settleLabels } from './globeLabelLayout';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   createStage, isStage, sphere, cylinder, arcTube, uploadMesh, createLitRenderer, createTarget3D,
@@ -158,6 +159,8 @@ interface ScreenLabel {
    * the provenance sentence, i.e. exactly the words that stop a position being read as an address.
    */
   readonly flip: boolean;
+  /** CSS `top` of the plate, settled by `settleLabels` so no two plates (and no plate and the headline) overlap. */
+  top: number;
 }
 
 interface OffFace {
@@ -858,7 +861,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
           labels.push({
             key: 'hub', sx: p.sx, sy: p.sy, title: `${HUB.label} · hub`,
             lines: [HUB.provenance], sunlit: null,
-            flip: p.sx > cssW - LABEL_MAX_PX,
+            flip: p.sx > cssW - LABEL_MAX_PX, top: 0,
           });
         }
       } else {
@@ -885,9 +888,18 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
         const sunlit = dot3(n, sunUnit) > 0;
         labels.push({
           key: s.key, sx: p.sx, sy: p.sy, title: s.label, lines, sunlit,
-          flip: p.sx > cssW - LABEL_MAX_PX,
+          flip: p.sx > cssW - LABEL_MAX_PX, top: 0,
         });
       }
+      /* THE PLATES SETTLE AGAINST EACH OTHER AND AGAINST THE HEADLINE. Found on production at 1440 px: the EU and
+         US plates covered each other and ran into "LISTING GEOGRAPHY". The headline band is reserved as a fixed
+         rectangle (its own two lines plus the four-line note the frame shows at desk width). */
+      const tops = settleLabels(
+        labels.map((l) => ({ key: l.key, sx: l.sx, sy: l.sy, flip: l.flip, lines: l.lines.length })),
+        { widthPx: LABEL_MAX_PX, reserved: [{ left: 14, top: 12, right: 14 + cssW * 0.62, bottom: 90 }], frameH: cssH },
+      );
+      labels.forEach((l, i) => { l.top = tops[i]!; });
+
 
       const shortestPinPx = book.sites.length === 0 ? 0
         : Math.min(...book.sites.map((s) => pinHeight(s.projects, maxProjects))) / worldPerPixel;
@@ -1031,10 +1043,10 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
               <div
                 key={l.key}
                 style={{
-                  position: 'absolute', left: l.sx, top: l.sy,
-                  /* `-100%` on Y lifts the box above its anchor so it never covers the pin it names; the X
-                     term hangs it left of the anchor near the right edge instead of clipping. */
-                  transform: l.flip ? 'translate(calc(-100% - 10px), -100%)' : 'translate(10px, -100%)',
+                  position: 'absolute', left: l.sx, top: l.top,
+                  /* Y is settled in the plan (`settleLabels`): above the anchor when that is clear, otherwise below
+                     or further down. The X term hangs it left of the anchor near the right edge instead of clipping. */
+                  transform: l.flip ? 'translate(calc(-100% - 10px), 0)' : 'translate(10px, 0)',
                   background: LABEL_BG, border: '1px solid rgba(127,178,255,.30)',
                   padding: '5px 7px', maxWidth: LABEL_MAX_PX,
                 }}

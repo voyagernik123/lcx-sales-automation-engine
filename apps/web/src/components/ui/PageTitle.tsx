@@ -18,7 +18,7 @@ interface PageTitleProps {
  */
 export function PageTitle({ children, icon, actions, subtitle, className }: PageTitleProps) {
   return (
-    <div className={clsx('flex items-start justify-between gap-3 mb-4', className)}>
+    <div className={clsx('flex flex-wrap items-start justify-between gap-3 mb-4', className)}>
       <div className="min-w-0">
         <h1 className="flex items-center gap-2 text-lg font-bold text-navy truncate">
           {icon && <span className="shrink-0 text-grey">{icon}</span>}
@@ -26,7 +26,7 @@ export function PageTitle({ children, icon, actions, subtitle, className }: Page
         </h1>
         {subtitle && <p className="mt-0.5 text-label text-grey">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="ml-auto flex items-center gap-2 shrink-0">{actions}</div>}
     </div>
   );
 }

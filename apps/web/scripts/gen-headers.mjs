@@ -59,7 +59,9 @@ const api = apiOrigin();
 
 const csp = [
   `default-src 'self'`,
-  `script-src 'self' ${hashes.join(' ')}`.trim(),
+  // Cloudflare Pages injects its Web Analytics beacon at the edge (static.cloudflareinsights.com); it is not in dist, so the local
+  // verifier never sees it, and production logged a CSP violation on every page (2026-09-04). Allowed by origin, explicitly.
+  `script-src 'self' https://static.cloudflareinsights.com ${hashes.join(' ')}`.trim(),
   `style-src 'self' 'unsafe-inline'`,
   `img-src 'self' data: blob:`,
   `font-src 'self'`,

@@ -106,6 +106,9 @@ export function OntologyOrrery({
   const [refusal, setRefusal] = useState<{ code: string; reason: string } | null>(null);
   const [reading, setReading] = useState<OrreryReading | null>(null);
   const noteId = useId();
+  /* The reading is a quarter of the frame at desk width. It opens on request; collapsed it stays in the DOM
+     (`hidden`), so `aria-describedby` still resolves to the full text. */
+  const [readingOpen, setReadingOpen] = useState(false);
 
   /*
    * STABLE, because `OntologyOrreryGl` lists both in an effect's dependencies. A fresh function each render
@@ -207,6 +210,17 @@ export function OntologyOrrery({
           </span>
           {/* S5 · the watch's mark on this room — still, DOM, from the one arrival store. */}
           <ReliefWatchLine />
+          {refusal === null && showOrrery && L !== undefined && (
+            <button
+              type="button"
+              onClick={() => setReadingOpen((v) => !v)}
+              aria-expanded={readingOpen}
+              aria-controls={noteId}
+              className={CONTROL}
+            >
+              Reading: {readingOpen ? 'shown' : 'hidden'}
+            </button>
+          )}
         </div>
 
         {refusal !== null ? (
@@ -227,7 +241,7 @@ export function OntologyOrrery({
           /* `noteId` is on EVERY branch, not just the two that read like a reason: `aria-describedby` pointing at
              an id that does not exist resolves to no description at all, so a reader who turned the orrery ON
              would lose the caveat they had a moment earlier. */
-          <div id={noteId} className="mt-2 space-y-1">
+          <div id={noteId} hidden={!readingOpen} className="mt-2 space-y-1">
             {/*
               * THE NUMBER THE ENVIRONMENT LIVES ON, measured on this graph at this camera — not carried over
               * from the harness. Every crossing in a plane is ambiguous by construction, which is why the flat

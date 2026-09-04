@@ -153,7 +153,14 @@ export async function composeWatch(pool: pg.Pool, actorId: string, sinceIso: str
     if (missing.has(s.table)) continue;
     if (!(await has(pool, s.table))) { missing.add(s.table); absent.push(`${s.table} does not exist on this environment.`); continue; }
     try {
-      const r = await pool.query(`SELECT ${s.cols} FROM ${s.table} WHERE ${s.where} ORDER BY ${s.orderBy} LIMIT 100`, [since, asOf]);
+      /* BIND EXACTLY WHAT THE CLAUSE REFERENCES (2026-09-04). Every source was bound [since, asOf]; seven of ten clauses reference only
+         $1 and Postgres refuses: "bind message supplies 2 parameters, but prepared statement requires 1" — the top bar carried that
+         sentence on every desk. The three deadline clauses reference only $2, which leaves $1 unused and untyped — refused as well.
+         So: a clause that uses $2 alone is rewritten to $1 and bound [asOf]; one that uses both is bound [since, asOf]; the rest [since]. */
+      const usesSince = /\$1\b/.test(s.where), usesAsOf = /\$2\b/.test(s.where);
+      const where = usesAsOf && !usesSince ? s.where.replace(/\$2\b/g, '$1') : s.where;
+      const params = usesAsOf && usesSince ? [since, asOf] : usesAsOf ? [asOf] : [since];
+      const r = await pool.query(`SELECT ${s.cols} FROM ${s.table} WHERE ${where} ORDER BY ${s.orderBy} LIMIT 100`, params);
       for (const row of r.rows as Row[]) {
         const at = s.at(row); if (!at) continue;
         drafts.push({ id: `table:${s.ws}:${s.table}${s.tag ? `#${s.tag}` : ''}:${String(row.id)}`, workspace: s.ws, kind: s.kind, title: s.title(row), detail: s.detail(row), href: s.href, at, source: 'table' });

@@ -22,7 +22,14 @@ export interface CompleteOpts {
   system?: string;
   maxTokens?: number;
   temperature?: number;
+  /** Hard deadline for the upstream call. A stalled provider otherwise stalls every caller — the
+   *  win/loss page sat on its skeletons in production for as long as OpenRouter held the socket. */
+  timeoutMs?: number;
 }
+
+/** Default upstream deadline. `LLM_TIMEOUT_MS` overrides; a stall past it is a transport throw, so the
+ *  caller gets the deterministic fallback it already has instead of nothing. */
+export const LLM_TIMEOUT_MS = Math.max(1000, Number(process.env.LLM_TIMEOUT_MS) || 12_000);
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -359,6 +366,7 @@ export class LLMClient {
       if (provider === 'anthropic') {
         res = await fetch(ANTHROPIC_URL, {
           method: 'POST',
+          signal: AbortSignal.timeout(opts.timeoutMs ?? LLM_TIMEOUT_MS),
           headers: {
             'content-type': 'application/json',
             'x-api-key': env.anthropicApiKey,
@@ -372,6 +380,7 @@ export class LLMClient {
         // OpenRouter — OpenAI-compatible chat completions.
         res = await fetch(OPENROUTER_URL, {
           method: 'POST',
+          signal: AbortSignal.timeout(opts.timeoutMs ?? LLM_TIMEOUT_MS),
           headers: {
             'content-type': 'application/json',
             authorization: `Bearer ${env.openrouterApiKey}`,

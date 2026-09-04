@@ -189,4 +189,18 @@ describe('the DMG plate', () => {
       expect(src).toMatch(/lcx-mark\.svg|readMark/);
     }
   });
+
+  /* AN ISOLATED CHROME BAR MUST CARRY A POSITIVE Z-INDEX (2026-09-04). `isolate` gives the bar its own stacking context so the glass
+     ::before can sit behind its content; with `z-index: auto` that whole context — the workspace switcher's open list included — painted
+     under the page panel that follows it in the DOM, and only slivers of the menu showed through the gutter. Read from source, like the
+     other pins here: the two bars that take GLASS_CHROME_LAYER_CLASS each carry a `z-N` alongside it. */
+  it('every chrome bar that isolates for its glass layer also lifts itself above the page', () => {
+    const files = ['../TopNav.tsx', '../Sidebar.tsx'];
+    for (const f of files) {
+      const src = readFileSync(resolve(__dirname, f), 'utf8');
+      const lines = src.split('\n').filter((l) => l.includes('GLASS_CHROME_LAYER_CLASS') && /className/.test(l));
+      expect(lines.length, `${f}: no className line carries GLASS_CHROME_LAYER_CLASS`).toBeGreaterThan(0);
+      for (const l of lines) expect(l, `${f}: an isolated bar with no z-index paints under the page — its menus vanish`).toMatch(/\bz-(?!\[?-)\d+/);
+    }
+  });
 });

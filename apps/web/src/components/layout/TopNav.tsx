@@ -171,7 +171,11 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
       data-tauri-drag-region={terminal ? 'deep' : undefined}
       style={terminal ? { paddingLeft: TRAFFIC_LIGHT_INSET_PX } : undefined}
       ref={headerRef}
-      className={`chrome-fade-x flex h-12 shrink-0 items-center gap-4 border-b border-line px-4 ${GLASS_CHROME_LAYER_CLASS}`}
+      /* z-20 (2026-09-04): GLASS_CHROME_LAYER_CLASS makes this bar an ISOLATED stacking context (so its glass ::before can sit at -z-10
+         behind its own content). Isolated with `z-index: auto`, the whole bar — menus included — painted BENEATH the page panel that
+         follows it in the DOM: the workspace switcher's list showed only through the gutter (v0.5.0 screenshots). A positive z-index
+         lifts the bar's context above the page; overlays keep their own higher layers (manual z-[120], skip link z-[300]). */
+      className={`chrome-fade-x z-20 flex h-12 shrink-0 items-center gap-4 border-b border-line px-4 ${GLASS_CHROME_LAYER_CLASS}`}
     >
       {/* The product signature. The mark inherits `text-navy` via currentColor, so it
         * is legible in both themes without a second asset — and cannot become the

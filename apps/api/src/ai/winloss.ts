@@ -153,7 +153,7 @@ export async function analyzeWinLoss(pool: 'all' | 'eu' | 'us' = 'all'): Promise
     `Rewrite this win/loss summary as a crisp 2-3 sentence insight for a sales lead. ` +
       `Keep every number exactly as given; do not invent data. Return only the prose.\n\n${base.narrative}\n\n` +
       `Data: ${JSON.stringify({ byPackage: base.byPackage, bySource: base.bySource, byJurisdiction: base.byJurisdiction, topLossReasons: base.topLossReasons })}`,
-    { feature: 'win-loss', maxTokens: 400, temperature: 0.4 },
+    { feature: 'win-loss', maxTokens: 400, temperature: 0.4, timeoutMs: 6_000 },
   );
 
   if (usedLlm && text) {

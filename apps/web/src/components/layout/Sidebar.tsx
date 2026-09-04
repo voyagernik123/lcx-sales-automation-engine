@@ -311,7 +311,7 @@ export function Sidebar() {
   });
 
   return (
-    <aside ref={asideRef} className={clsx('chrome-fade-y flex flex-col overflow-y-auto border-r border-line t-panel', GLASS_CHROME_LAYER_CLASS, sidebarCollapsed ? 'w-14' : 'w-56')}>
+    <aside ref={asideRef} className={clsx('chrome-fade-y z-10 flex flex-col overflow-y-auto border-r border-line t-panel', GLASS_CHROME_LAYER_CLASS, sidebarCollapsed ? 'w-14' : 'w-56')}>
       <nav ref={navRef} className="flex-1 p-2">
         {sections.map(section => {
           const isOpen = openSections[section.title] ?? true;

@@ -548,18 +548,17 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
        * machined plinth the form floats above and is cropped by the bottom edge. Nothing the
        * operator has to read sits over anything bright.
        */
-      const view = layerRef.current === 'cover'
-        /* THE STILL'S OWN CAMERA (build_forge.py:133 ← docs/3d/e8/entry.ts:257): target (0, 0.34, 0), distance 5.0,
-           azimuth 22°, elevation 24°, vertical fov 30°. The /lcxos hero lies OVER the S7 still, so the live frame must
-           land on the still's framing — same object, same eye — or the swap reads as a jump. */
-        ? { target: [0, 0.34, 0] as const, distance: 5.0, azimuthDeg: 22, elevationDeg: 24, fovDeg: 30 }
-        : {
-          /* y 2.35 rather than 1.55: at 1.55 the disc's specular highlight sat directly under the
-             status footer and made "LOCAL / API DOWN / UTC" hard to read. Nothing an operator has to
-             read may sit over anything bright — the object is cropped by the bottom edge instead. */
-          target: [0, 2.35, 0] as const, distance: 6.2,
-          azimuthDeg: 22, elevationDeg: 14, fovDeg: 34,
-        };
+      /* THE FRAMING (P3 → 2026-09-04). The sign-in used to sink the object below the form and crop it at the bottom edge — a
+         design meant to keep the highlight from under the footer, which read on the live page as a logo cut in half. Now the object is
+         WHOLE wherever there is room: on a wide viewport it stands to the right of the centred form (target x shifted, distance 7),
+         fully visible, its bloom clear of the form's edge; on a narrow one — the form owns the width — it keeps the low, cropped stand
+         under the form, which is the only place it does not sit under text. The hero (`cover`) keeps the still's own camera. Read per
+         frame from the canvas aspect, so a resize re-frames without a rebuild. */
+      const HERO = { target: [0, 0.34, 0] as const, distance: 5.0, azimuthDeg: 22, elevationDeg: 24, fovDeg: 30 };
+      const BESIDE = { target: [-2.33, 0.34, 1.86] as const, distance: 10.0, azimuthDeg: 38.6, elevationDeg: 24.9, fovDeg: 34 };
+      const BELOW = { target: [0, 2.35, 0] as const, distance: 6.2, azimuthDeg: 22, elevationDeg: 14, fovDeg: 34 };
+      const viewFor = (aspect: number) => (layerRef.current === 'cover' ? HERO : aspect >= 1.45 ? BESIDE : BELOW);
+      let view = viewFor(canvas.clientWidth / Math.max(1, canvas.clientHeight));
       const centre = gl3.boundsCentre([-2, 0, -2], [2, 0.55, 2]);
       const radius = gl3.boundsRadius([-2, 0, -2], [2, 0.55, 2]);
       const near = Math.max(0.01, view.distance / 100);
@@ -575,6 +574,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const lightVP = gl3.lightViewProjection(
           { direction: lightDir, colour: [1, 1, 1], extent: radius * 0.9 }, centre, radius,
         );
+        view = viewFor(W / H);
         const vp = gl3.viewProjection(view, W / H);
         const eye = gl3.eyeOf(view);
 

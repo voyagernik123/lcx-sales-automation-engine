@@ -778,3 +778,33 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 
 - **2026-09-04 — AFTER THE CLOSE: the frame-budget spec gains a COMPOSITING CONTROL.** HEAD's Playwright job was red on framebudget.spec.ts with a CLEAN idle control (70 frames, 2 dropped) and 29 of 36 juiced frames dropped at 33 ms — three runs of six on identical code; locally (SwiftShader too, on an M1) 1 of 61. The idle control says the machine is quiet but not what a REPAINT costs there. Added: the same target repainted at the same 80 ms cadence by a plain CSS outline toggle, no feedback layer; the assertion compares juiced drops against the larger of the two controls (+3). A first cut skipped on "software renderer" and was reverted within the minute: local headless Chromium is SwiftShader as well and passes — speed, not software, is the discriminator, and that skip would have silenced the test everywhere. Locally: idle 1 · plain 0 · juiced 1 dropped, all p50 16.7 ms.
   The control MEASURED (CI 17ca24a): plain repaint 12/54 and 15/28 dropped, juiced 24/34 and 20/23 — one extra frame per event on the runner's compositor, 1 vs 0 on an M1. Per-event work read (flash class, two-node tone, no-op haptic; no layout read-after-write): the extra frame is the flash. Allowance restated per event: ≤ max(idle, plain) + max(3, fired). The quadratic case stays caught.
+
+---
+
+## Production review — 2026-09-04, seated in the browser, every route in all eight workspaces
+
+Nik's instruction, verbatim intent: *"login and see, there are a lot of issues … fix it all — a command, not an ask."*
+He seated the production tab himself. I walked every sidebar route at 1440×1000 (dark), reading each page's DOM
+and screenshot, and fixed what was found. Judged by the screenshot, never by a test that passed.
+
+| # | Where (prod) | What was seen | Cause | Fix | Pinned by |
+|---|---|---|---|---|---|
+| 1 | Desktop v0.5.0 + web, workspace switcher | The menu painted UNDER the page and the sidebar | `GLASS_CHROME_LAYER_CLASS` makes the header/aside `isolate` stacking contexts with `z-index: auto`; `main` paints after them | header `z-20`, aside `z-10` | `topNavChrome.test.tsx`: every chrome bar carrying the glass layer must carry a z-index |
+| 2 | `/select` sign-in, laptop aspects | The Forge disc cropped at the bottom ("even this logo at the bottom") | One framing for every aspect | Three framings: HERO (cover), BESIDE (aspect ≥ 1.45 — the disc to the right of the form, seen from the hero's own direction: az 22°/el 24° relative to the disc, distance 10, target shifted along the camera's right vector), BELOW (narrower). Verified whole and clear of the form at 1440×900 and 1920×1080, both themes; highlight is a rim streak, not a white face | peek10/peek11 frames |
+| 3 | Top bar on every page | `WATCH deals could not be read: bind message supplies 2 parameters, but prepared statement "" requires 1` | Seven watch sources use only `$1` and three only `$2`, all bound `[since, asOf]` | params derived from the clause's placeholders | `watch/__tests__/sourceBinds.test.ts` |
+| 4 | Console, every page | CSP blocked Cloudflare's edge-injected `beacon.min.js` | `script-src` listed only self + hashes | `https://static.cloudflareinsights.com` allowed | `gen-headers.mjs` |
+| 5 | Every page, first run | The FIRST RUN coach mark sat on top of the sidebar's Field Notes card | Coach fixed at bottom-left; the Field Notes card came later and owns that corner | Coach centred under the top bar, which is where every step it teaches (⌘K, `?`, the switcher) lives | — |
+| 6 | Page headers with actions | Title truncated by the action buttons at narrow widths | `PageTitle` row could not wrap; title `truncate`, actions `shrink-0` | `flex-wrap`, actions `ml-auto` — they drop under the title instead of clipping it | — |
+| 7 | `/win-loss` | Skeletons forever; the board request finished in 773 ms, the win-loss request never appeared in resource timing | `analyzeWinLoss` awaits `llm.complete` with NO deadline; OpenRouter held the socket | `AbortSignal.timeout` on both provider fetches (`LLM_TIMEOUT_MS`, default 12 s; win-loss passes 6 s). A stall is now the fourth collapsed condition — `AI_PROVIDER_ERROR`, `httpStatus: null` — and the deterministic narrative returns | `ai/__tests__/llmDeadline.test.ts` (a provider that hangs until aborted) |
+| 8 | `/market-map`, globe | The EU and US centroid plates covered each other and ran into the LISTING GEOGRAPHY headline | Every plate hung above its anchor; nothing checked what was already there | `globeLabelLayout.settleLabels`: greedy top-down — above the anchor, else below, else slide past; the headline band reserved | `globeLabelLayout.test.ts` (6) |
+| 9 | `/ontology`, orrery | The reading plate covered the top-left quarter of the figure | Always expanded | Collapsed to its control row; `Reading: hidden/shown` toggle; body stays in the DOM (`hidden`) so `aria-describedby` still resolves | — |
+| 10 | `/gps/origination` | The Promote/Refuse buttons clipped at the table's right edge | Unbreakable URLs + `whitespace-nowrap` actions forced the table wider than its card | URLs `break-all`, the why-cell `overflow-wrap: anywhere`, actions wrap | — |
+
+Not defects, checked and left: `/notes` blank cards were the loading skeleton (rows render with full contrast once the
+API answers); `/command` and `/wbr` fill after 9–15 s because the API is slow, not hung; `/handoff-queue` "does not
+exist" was my own wrong URL — the sidebar links `/outreach`, which renders. Campaign "TEst" and the other prod test-draft
+rows remain Nik's items. The Settings page still carries "Apollo Systems Console" copy from an old template — noted,
+not changed here.
+
+What I could not verify before deploy: #5 (the coach), #8 (globe plates) and #9 need production data or a first-run
+profile the local peek did not have; verified live after the push (see the commit that follows this one).

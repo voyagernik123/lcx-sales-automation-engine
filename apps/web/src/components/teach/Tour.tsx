@@ -99,9 +99,10 @@ export function Tour({
       aria-label="First run"
       /* Above the manual's z-[120], which looks wrong and is not: the moment the
        * manual is open is the moment this panel is telling the operator how to come
-       * back out of it. Bottom-left and clear of two neighbours — the toast stack owns
-       * bottom-right, and the hint layer's mode banner owns bottom-3 left-3. */
-      className="fixed bottom-12 left-3 z-[130] w-[19rem] rounded-lg border border-line bg-card p-3 shadow-overlay"
+       * back out of it. Centred under the top bar, because every step it teaches (⌘K, `?`,
+       * the workspace switcher) lives in that bar — and because bottom-left was found in
+       * production sitting on top of the sidebar's Field Notes card. */
+      className="fixed top-14 left-1/2 z-[130] w-[19rem] -translate-x-1/2 rounded-lg border border-line bg-card p-3 shadow-overlay"
     >
       <div className="flex items-start gap-2">
         <h2 className="text-micro font-bold uppercase tracking-wider text-grey">
