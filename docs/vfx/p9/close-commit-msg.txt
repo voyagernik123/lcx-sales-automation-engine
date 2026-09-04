@@ -1,0 +1,21 @@
+docs(ledger): THE PRODUCTION complete — P0–P9 live and verified, desktop v0.5.0 published; the arc, the scorecard, what stays with the owner
+
+Nine phases, each committed with its measured before/after, verified by content on both surfaces, with a green CI run; two desktop
+releases at the same builds (v0.4.0 at P4, v0.5.0 at P9 — tag v0.5.0, CDN-verified, installed locally).
+
+THE ARC, same instrument before and after (production-p0 vs production-p9): dark GL visible on 3 of 79 routes → 74 of 80, median coverage
+0 % → 34 %, ≥ 35 % on 2 → 37; light 4 of 79 → 79 of 80, median 0 % → 43 %, ≥ 35 % on 2 → 47.
+
+WHAT THE PROGRAM FOUND AND FIXED BY MEASURING: the stage's glows drawn from a watch captured at mount (null for the life of the mount,
+P3 → fixed P7); the plate's walls wound inward and culled since P2 (P6); the room-glow cores over the dark ceiling on 2.3 % of the page
+(P8); the quiet glow the first P7 cut removed; the instrument's frozen clock holding the arrival at zero; its wait living in the seated
+branch; its footer anchor hidden at narrow widths. And mine: three void sweeps (a scoped const, a port collision, a licence shim), a gate
+that was the web workspace's, a fill that printed zeros as a result.
+
+SHORT, stated in SCORECARD.md: desk GL coverage ≥ 50 % (a rendered desk is opaque cards over the plate — an owner's call on text
+contrast, not a tuning); the pipeline hero's light panel 91 → 86 %, unexplained; the verifier's 320-page matrix reduced to 80 + subsets.
+
+OWNER-ONLY, unchanged: `sudo xcodebuild -license accept` (Xcode 26.6 updated under the session; the Command Line Tools carry every
+script), the Cloudflare Pages dashboard, the GPS items, the Actions DB secret, Apple Developer enrolment.
+
+gate: root ci-check clean; 0 npm error: 57/1997 · 20/373 · 170/3532 · 210/2818 · 2/20 · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 360/440 · passthrough 1025/1152 · 210 lazy page chunks
