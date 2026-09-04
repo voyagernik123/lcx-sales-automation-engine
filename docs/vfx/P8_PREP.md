@@ -70,3 +70,6 @@ narrow/mobile framings; print pins for every new token. Gate: every ratchet gree
 - `patch_keyboardday_settle.py` — the scroll-settle wait before Decide's box is read (two unchanged rAF reads of the scroller's scrollTop).
 Order after P7 is LIVE: routes module → verifier → context loss (+ its instrument check) → DPR/narrow pass over the hero + desk subset →
 memory ceilings → glass floors re-measured on the P7 record → print pins → gate → commit → push → verify → P8 LIVE.
+
+## Status (2026-09-04, during the P8 sweep)
+DONE in the tree: routes module · verifier (+ --reduced, --lose-context; one context per combination) · context loss said + recovered (measured) · DPR/viewport env + hero-rect scaling · narrow anchor · heap sampling · Forge redraw contract · frame budget measured idle on the M1 GPU (worst p90 7.2 ms) · glass floors measured, glow cores brought under the ceiling (glowGain .20 → .14) · print pins test · keyboardday settle-wait. PENDING: the full P8 sweep record (run 2), the reduced verifier matrix after it, gate, commit (p8-commit.sh), verify (p8-verify.sh), LIVE.

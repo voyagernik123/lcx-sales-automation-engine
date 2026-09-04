@@ -73,7 +73,7 @@ export const STAGE_KEY_DIR: Vec3 = normalise3([0.42, -0.78, 0.46]);
  * Every value below was chosen under `STAGE_LUMINANCE_MAX`: composite luminance under the glass stays below the bound.
  */
 export const STAGE_LIGHT = {
-  dark: { keyGain: 2.3, ambientGain: 0.7, shadowStrength: 0.85, glowGain: 0.20, glowSize: 0.5, fogDensity: 0.03, envGain: 0.3 },
+  dark: { keyGain: 2.3, ambientGain: 0.7, shadowStrength: 0.85, glowGain: 0.14, glowSize: 0.5, fogDensity: 0.03, envGain: 0.3 },
   /* LIGHT SPEAKS THROUGH CHROMA. Under the text floors a white studio has no luminance headroom (the page is L .93,
      the floor may not drop below .55 under the glass), so what the eye gets is colour and shadow: brand-blue pools,
      a bluer horizon, a firmer shelf shadow. Measured: luminance-only tuning read 3% coverage in light. */

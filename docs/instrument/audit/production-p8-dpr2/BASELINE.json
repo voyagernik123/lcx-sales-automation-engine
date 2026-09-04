@@ -1,0 +1,1340 @@
+{
+  "totals": {
+    "warmup": {
+      "routes": 6,
+      "ms": 15348
+    },
+    "head": "8b2773a",
+    "runAt": "2026-09-04T08:32:17.365Z",
+    "fixtures": true,
+    "frozenAt": "2026-09-21T07:18:41.000Z",
+    "routes": 6,
+    "glRoutes": 2,
+    "shellCarriesGl": true,
+    "ambient": 6,
+    "ambientBy": {
+      "animate-slide-in": 2,
+      "animate-pulse": 2,
+      "animate-spin": 2
+    },
+    "feelFiles": 2,
+    "timerCallSites": 11,
+    "clockReadCallSites": 36,
+    "continuityCallSites": 1,
+    "hexLiteralsOutsideTokens": 17,
+    "filesInUnion": 157,
+    "seam": [
+      {
+        "theme": "light",
+        "token": "--page-bg",
+        "dom": "#F4F7FC",
+        "glField": "page",
+        "gl": "#F4F7FC",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--card",
+        "dom": "#FFFFFF",
+        "glField": "plate",
+        "gl": "#FFFFFF",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--line",
+        "dom": "#B9C6E0",
+        "glField": "rule",
+        "gl": "#B9C6E0",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "light",
+        "token": "--page-bg",
+        "dom": "#F4F7FC",
+        "glField": "ground",
+        "gl": "#E8EDF6",
+        "deltaE": 2.81,
+        "designed": true
+      },
+      {
+        "theme": "dark",
+        "token": "--page-bg",
+        "dom": "#090E1B",
+        "glField": "page",
+        "gl": "#090E1B",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--card",
+        "dom": "#0E1628",
+        "glField": "plate",
+        "gl": "#0E1628",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--line",
+        "dom": "#26355A",
+        "glField": "rule",
+        "gl": "#26355A",
+        "deltaE": 0,
+        "designed": false
+      },
+      {
+        "theme": "dark",
+        "token": "--page-bg",
+        "dom": "#090E1B",
+        "glField": "ground",
+        "gl": "#070B14",
+        "deltaE": 3.09,
+        "designed": true
+      }
+    ],
+    "seamMaxDeltaE": 0,
+    "runtime": {
+      "captured": 6,
+      "reachedBothThemes": 6,
+      "themeAppliedCorrectly": 6,
+      "routesWithContinuity": 4,
+      "routesWithMotionAtRest": 0,
+      "maxLiveIntervals": 2,
+      "routesWithRafLoop": 0,
+      "routesWithGlContext": 6,
+      "pairsExcludedDomMismatch": {
+        "dark": 0,
+        "light": 0
+      },
+      "routesWithGlVisible": {
+        "dark": 6,
+        "light": 6
+      },
+      "medianGlCoverage": {
+        "dark": 0.3151,
+        "light": 0.3755
+      },
+      "medianFiguresInViewport": 5,
+      "routesWithPageErrors": 0
+    }
+  },
+  "shell": {
+    "files": 74,
+    "ambient": 4,
+    "ambientBy": {
+      "animate-slide-in": 2,
+      "animate-pulse": 2
+    },
+    "feelFiles": 0,
+    "timers": 7,
+    "clockReads": 30,
+    "continuity": 1,
+    "hexLiterals": 5,
+    "gl": true,
+    "glFiles": [
+      "components/stage/Stage.tsx",
+      "components/brand/forgeObjects.ts",
+      "components/shared/useQualityTier.ts"
+    ]
+  },
+  "routes": [
+    {
+      "path": "/lcxos",
+      "probe": "/lcxos",
+      "module": null,
+      "seated": false,
+      "static": {
+        "files": 0,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 0,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "objects": {
+            "markers": null,
+            "forge": "glb 160520 bytes · disc,ring,plinth,marker",
+            "arc": "done",
+            "arrival": null
+          },
+          "memory": {
+            "usedJSHeapMB": 33,
+            "totalJSHeapMB": 40
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": true,
+          "intervals": 1,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)"
+          ],
+          "rafCalls": 29,
+          "gl": 1,
+          "glCalls": 1,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 8,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": -1,
+          "stageEnv": null,
+          "busyAtCapture": 0,
+          "domFp": "0|3075:-2081428280",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": null,
+            "canvases": 1
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "lcxos-dark.png",
+          "visibility": {
+            "coverage": 0.1806,
+            "delta": 23.46,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": null,
+              "canvases": 1
+            },
+            "panels": {},
+            "thumbOn": "gallery/lcxos-dark-on.webp",
+            "thumbOff": "gallery/lcxos-dark-off.webp"
+          }
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "objects": {
+            "markers": null,
+            "forge": "glb 160520 bytes · disc,ring,plinth,marker",
+            "arc": "done",
+            "arrival": null
+          },
+          "memory": {
+            "usedJSHeapMB": 33,
+            "totalJSHeapMB": 40
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": false,
+          "intervals": 1,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)"
+          ],
+          "rafCalls": 6,
+          "gl": 1,
+          "glCalls": 1,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 1,
+          "textNodes": 8,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": -1,
+          "stageEnv": null,
+          "busyAtCapture": 0,
+          "domFp": "0|3075:-2081428280",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": null,
+            "canvases": 1
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "lcxos-light.png",
+          "visibility": {
+            "coverage": 0.1953,
+            "delta": 15.03,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": null,
+              "canvases": 1
+            },
+            "panels": {},
+            "thumbOn": "gallery/lcxos-light-on.webp",
+            "thumbOff": "gallery/lcxos-light-off.webp"
+          }
+        }
+      }
+    },
+    {
+      "path": "/select",
+      "probe": "/select",
+      "module": "pages/SelectOperator",
+      "seated": false,
+      "static": {
+        "files": 6,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 0,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "objects": {
+            "markers": null,
+            "forge": "glb 160520 bytes · disc,ring,plinth,marker",
+            "arc": "done",
+            "arrival": null
+          },
+          "memory": {
+            "usedJSHeapMB": 28,
+            "totalJSHeapMB": 30
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 3,
+          "gl": 1,
+          "glCalls": 1,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 0,
+          "textNodes": 8,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": -1,
+          "stageEnv": null,
+          "busyAtCapture": 0,
+          "domFp": "0|193:-683534780",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": null,
+            "canvases": 1
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "select-dark.png",
+          "visibility": {
+            "coverage": 0.9474,
+            "delta": 25.39,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": null,
+              "canvases": 1
+            },
+            "panels": {},
+            "thumbOn": "gallery/select-dark-on.webp",
+            "thumbOff": "gallery/select-dark-off.webp"
+          }
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "objects": {
+            "markers": null,
+            "forge": "glb 160520 bytes · disc,ring,plinth,marker",
+            "arc": "done",
+            "arrival": null
+          },
+          "memory": {
+            "usedJSHeapMB": 30,
+            "totalJSHeapMB": 33
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 3,
+          "gl": 1,
+          "glCalls": 1,
+          "vt": 0,
+          "errors": [],
+          "animations": 0,
+          "figures": 0,
+          "textNodes": 8,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": -1,
+          "stageEnv": null,
+          "busyAtCapture": 0,
+          "domFp": "0|193:-683534780",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": null,
+            "canvases": 1
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 0,
+            "clicked": null,
+            "error": null,
+            "urlAfterClick": null
+          },
+          "pageErrors": [],
+          "shot": "select-light.png",
+          "visibility": {
+            "coverage": 0.9621,
+            "delta": 22.63,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": null,
+              "canvases": 1
+            },
+            "panels": {},
+            "thumbOn": "gallery/select-light-on.webp",
+            "thumbOff": "gallery/select-light-off.webp"
+          }
+        }
+      }
+    },
+    {
+      "path": "/tasks",
+      "probe": "/tasks",
+      "module": "pages/MyTasks",
+      "seated": true,
+      "static": {
+        "files": 17,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 7,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 32,
+            "totalJSHeapMB": 33
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 446,
+          "gl": 1,
+          "glCalls": 1,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 5,
+          "textNodes": 48,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 5,
+          "stageRedrawMs": 8.5,
+          "stageEnv": "dark",
+          "busyAtCapture": 0,
+          "domFp": "0|686:-1597105260",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 1
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 597,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 301,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "tasks-dark.png",
+          "visibility": {
+            "coverage": 0.4517,
+            "delta": 8.82,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 1
+            },
+            "panels": {},
+            "thumbOn": "gallery/tasks-dark-on.webp",
+            "thumbOff": "gallery/tasks-dark-off.webp"
+          }
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 8,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 32,
+            "totalJSHeapMB": 32
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 726,
+          "gl": 1,
+          "glCalls": 1,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 5,
+          "textNodes": 50,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 5,
+          "stageRedrawMs": 6.1,
+          "stageEnv": "light",
+          "busyAtCapture": 0,
+          "domFp": "0|1009:1007953286",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 1
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 639,
+                "x1": 224,
+                "y1": 887
+              },
+              {
+                "name": "topbar",
+                "x0": 301,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 14,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "tasks-light.png",
+          "visibility": {
+            "coverage": 0.5471,
+            "delta": 5.36,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 1
+            },
+            "panels": {},
+            "thumbOn": "gallery/tasks-light-on.webp",
+            "thumbOff": "gallery/tasks-light-off.webp"
+          }
+        }
+      }
+    },
+    {
+      "path": "/market-map",
+      "probe": "/market-map",
+      "module": "pages/MarketMap",
+      "seated": true,
+      "static": {
+        "files": 22,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 0,
+        "timers": 1,
+        "clockReads": 0,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "components/market/GlobeRelief.tsx",
+          "components/shared/ReliefWatchLine.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 8,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 36,
+            "totalJSHeapMB": 43
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 707,
+          "gl": 1,
+          "glCalls": 3,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 8,
+          "textNodes": 74,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 27,
+          "stageRedrawMs": 4.3,
+          "stageEnv": "dark",
+          "busyAtCapture": 0,
+          "domFp": "0|2893:-28585535",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 1
+          },
+          "heroRects": [
+            {
+              "name": "globe",
+              "x": 1084,
+              "y": 344.375,
+              "w": 1128,
+              "h": 1815.625
+            }
+          ],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 719,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 353,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "market_map-dark.png",
+          "visibility": {
+            "coverage": 0.3151,
+            "delta": 18.62,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 1
+            },
+            "panels": {
+              "globe": 0.6508
+            },
+            "thumbOn": "gallery/market_map-dark-on.webp",
+            "thumbOff": "gallery/market_map-dark-off.webp"
+          }
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 7,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 38,
+            "totalJSHeapMB": 43
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 521,
+          "gl": 1,
+          "glCalls": 4,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 43,
+          "textNodes": 160,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": 7.3,
+          "stageEnv": "light",
+          "busyAtCapture": 0,
+          "domFp": "0|2893:23731365",
+          "animationsAtShot": 6,
+          "vtAtShot": 5,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 1
+          },
+          "heroRects": [
+            {
+              "name": "globe",
+              "x": 1084,
+              "y": 344.375,
+              "w": 1128,
+              "h": 1815.625
+            }
+          ],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 719,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 353,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "market_map-light.png",
+          "visibility": {
+            "coverage": 0.3755,
+            "delta": 49.13,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 1
+            },
+            "panels": {
+              "globe": 0.8075
+            },
+            "thumbOn": "gallery/market_map-light-on.webp",
+            "thumbOff": "gallery/market_map-light-off.webp"
+          }
+        }
+      }
+    },
+    {
+      "path": "/bd-kpis",
+      "probe": "/bd-kpis",
+      "module": "pages/KpiDashboard",
+      "seated": true,
+      "static": {
+        "files": 49,
+        "ambient": 0,
+        "ambientBy": {},
+        "feelFiles": 1,
+        "timers": 3,
+        "clockReads": 4,
+        "continuity": 0,
+        "hexLiterals": 6,
+        "gl": false,
+        "glFiles": []
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 8,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 38,
+            "totalJSHeapMB": 43
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 485,
+          "gl": 1,
+          "glCalls": 2,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 43,
+          "textNodes": 160,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": 4.4,
+          "stageEnv": "dark",
+          "busyAtCapture": 0,
+          "domFp": "0|3769:1444278262",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 5
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 719,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 371,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_kpis-dark.png",
+          "visibility": {
+            "coverage": 0.1085,
+            "delta": 11.05,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 5
+            },
+            "panels": {},
+            "thumbOn": "gallery/bd_kpis-dark-on.webp",
+            "thumbOff": "gallery/bd_kpis-dark-off.webp"
+          }
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 7,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 36,
+            "totalJSHeapMB": 40
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 761,
+          "gl": 1,
+          "glCalls": 2,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 43,
+          "textNodes": 160,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 0,
+          "stageRedrawMs": 6.2,
+          "stageEnv": "light",
+          "busyAtCapture": 0,
+          "domFp": "0|3769:1038712342",
+          "animationsAtShot": 0,
+          "vtAtShot": 0,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 5
+          },
+          "heroRects": [],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 719,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 371,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 18,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "bd_kpis-light.png",
+          "visibility": {
+            "coverage": 0.2055,
+            "delta": 6.61,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 5
+            },
+            "panels": {},
+            "thumbOn": "gallery/bd_kpis-light-on.webp",
+            "thumbOff": "gallery/bd_kpis-light-off.webp"
+          }
+        }
+      }
+    },
+    {
+      "path": "/command-deck",
+      "probe": "/command-deck",
+      "module": "pages/CommandDeck",
+      "seated": true,
+      "static": {
+        "files": 32,
+        "ambient": 2,
+        "ambientBy": {
+          "animate-spin": 2
+        },
+        "feelFiles": 1,
+        "timers": 2,
+        "clockReads": 1,
+        "continuity": 0,
+        "hexLiterals": 0,
+        "gl": true,
+        "glFiles": [
+          "components/geometry/SurfaceRelief.tsx"
+        ]
+      },
+      "runtime": {
+        "dark": {
+          "theme": "dark",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 8,
+              "clockSteps": 3,
+              "framesDuringSweep": 3
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 36,
+            "totalJSHeapMB": 43
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": true,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 540,
+          "gl": 1,
+          "glCalls": 3,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 5,
+          "textNodes": 41,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 47,
+          "stageRedrawMs": 4.1,
+          "stageEnv": "dark",
+          "busyAtCapture": 0,
+          "domFp": "0|8597:727698498",
+          "animationsAtShot": 5,
+          "vtAtShot": 5,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 1
+          },
+          "heroRects": [
+            {
+              "name": "surface",
+              "x": 588,
+              "y": 1543.90625,
+              "w": 2152,
+              "h": 2133.09375
+            }
+          ],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 380,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 365,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_deck-dark.png",
+          "visibility": {
+            "coverage": 0.2878,
+            "delta": 16.72,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 1
+            },
+            "panels": {
+              "surface": 0.8331
+            },
+            "thumbOn": "gallery/command_deck-dark-on.webp",
+            "thumbOff": "gallery/command_deck-dark-off.webp"
+          }
+        },
+        "light": {
+          "theme": "light",
+          "reached": "REACHED",
+          "objects": {
+            "markers": "glb 160520 bytes · 8 pucks",
+            "forge": null,
+            "arc": null,
+            "arrival": {
+              "items": 3,
+              "steps": 3,
+              "sweeping": false,
+              "frames": 4,
+              "clockSteps": 3,
+              "framesDuringSweep": -1
+            }
+          },
+          "memory": {
+            "usedJSHeapMB": 38,
+            "totalJSHeapMB": 43
+          },
+          "rafPerSecond": 0,
+          "animationsBy": {},
+          "dark": false,
+          "intervals": 2,
+          "intervalSites": [
+            "handleMessage (http://127.0.0.1:5189/@vite/client:620:7)",
+            "ensureHeartbeat (http://127.0.0.1:5189/src/lib/clock.ts:59:15)"
+          ],
+          "rafCalls": 612,
+          "gl": 1,
+          "glCalls": 4,
+          "vt": 2,
+          "errors": [],
+          "animations": 0,
+          "figures": 8,
+          "textNodes": 63,
+          "canvases": 1,
+          "title": "LCXOS",
+          "animationsAfterReturn": 27,
+          "stageRedrawMs": 5.2,
+          "stageEnv": "light",
+          "busyAtCapture": 0,
+          "domFp": "0|8596:1676960746",
+          "animationsAtShot": 47,
+          "vtAtShot": 5,
+          "offState": {
+            "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+            "canvases": 1
+          },
+          "heroRects": [
+            {
+              "name": "surface",
+              "x": 588,
+              "y": 1543.90625,
+              "w": 2152,
+              "h": 2133.09375
+            }
+          ],
+          "chromeFade": {
+            "bands": [
+              {
+                "name": "sidebar",
+                "x0": 0,
+                "y0": 380,
+                "x1": 224,
+                "y1": 886
+              },
+              {
+                "name": "topbar",
+                "x0": 365,
+                "y0": 0,
+                "x1": 598,
+                "y1": 48
+              }
+            ],
+            "textHits": 0,
+            "hits": []
+          },
+          "nav": {
+            "linkCount": 8,
+            "clicked": "/",
+            "error": null,
+            "urlAfterClick": "/"
+          },
+          "pageErrors": [],
+          "shot": "command_deck-light.png",
+          "visibility": {
+            "coverage": 0.3549,
+            "delta": 16.35,
+            "domMatch": true,
+            "offRetried": false,
+            "inPlace": true,
+            "offState": {
+              "stage": "refused:FORCED_OFF_FOR_MEASUREMENT",
+              "canvases": 1
+            },
+            "panels": {
+              "surface": 0.9219
+            },
+            "thumbOn": "gallery/command_deck-light-on.webp",
+            "thumbOff": "gallery/command_deck-light-off.webp"
+          }
+        }
+      }
+    }
+  ]
+}

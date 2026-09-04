@@ -644,12 +644,16 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const forceOff = () => { disposeRef.current?.(); disposeRef.current = null; canvas.style.display = 'none'; canvas.dataset.forceOff = '1'; };
       const teardown = () => {
         window.removeEventListener('lcx:gl-force-off', forceOff);
+        delete (globalThis as { __LCX_FORGE_REDRAW?: () => number }).__LCX_FORGE_REDRAW;
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
         D?.dispose(); A?.dispose(); K.dispose(); S.dispose(); T.dispose(); R.dispose();
         stage.dispose();
       };
       disposeRef.current = teardown;
+      /* THE REDRAW CONTRACT, the Forge's half (P8): one forced synchronous frame, its own wall time in ms, for the frame-budget
+         script (scripts/measure-frame-budget.mjs) — the stage has had the same since P0. Read by nothing in the product. */
+      (globalThis as { __LCX_FORGE_REDRAW?: () => number }).__LCX_FORGE_REDRAW = () => { const t0 = performance.now(); render(1); return performance.now() - t0; };
       /* THE INSTRUMENT'S OFF SWITCH (P5 → P6). The shell's stage disposes on `lcx:gl-force-off` so a capture pair can be
          read from ONE page load; the Forge did not, so /select's pair was identical and its coverage read 0 in every
          sweep. Same contract here: dispose, hide the canvas, and the still beneath is the OFF frame. */

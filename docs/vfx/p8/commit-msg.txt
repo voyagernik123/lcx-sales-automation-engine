@@ -1,0 +1,98 @@
+feat(vfx): P8 HARDENING — the same thing at 2×, narrow, with the GPU taken away, in reduced motion and on paper; measured on the host GPU
+
+THE PRODUCTION (VFX_PRODUCTION_PLAN.md) P8, on P7 (8b2773a). The plan's line: "the same thing on a MacBook Air at 2×, on a narrow
+window, on a lost GPU context (a readable flat surface that says why), in reduced motion, on paper."
+
+THE FRAME BUDGET, ON THE HOST GPU (scripts/measure-frame-budget.mjs — ANGLE Metal, Apple M1, DPR 2; the instrument's SwiftShader
+cannot say this and useQualityTier refuses a figure from a software rasteriser)
+  Idle machine, 30 forced frames per route, DPR 2, 1440×1100 css px (2880×2200 device px):
+    /command-deck  stage  p50 3.10 ms · p90 6.20 · max 8.60  (surface hero's own probe 1.6 ms at 2×, tier full)
+    /bd-kpis       stage  p50 4.40 ms · p90 7.20 · max 8.80  (five canvases mounted: the stage + four engine charts)
+    /tasks         stage  p50 2.90 ms · p90 3.70 · max 4.30
+    /select        forge  p50 2.20 ms · p90 3.30 · max 18.20 (the max is the first forced frame after idle — shader and clock warm-up;
+                                                            a run under two SwiftShader sweeps read p90 24 ms and is not the measurement)
+    /lcxos         forge  p50 2.10 ms · p90 2.70 · max 2.80
+  Verdict on the 90th percentile: worst 7.20 ms against 16.6 → INSIDE the budget, with 9.4 ms of headroom. The charts render once per
+  data change (no per-frame cost at rest); their cost is inside /bd-kpis's stage frame above. The Forge gained the same redraw contract
+  the stage has had since P0 (`__LCX_FORGE_REDRAW`) so it could be measured at all.
+
+CONTEXT LOSS (Stage.tsx): `webglcontextlost` → preventDefault + `refused:CONTEXT_LOST` on the host (the DOM plate and every text floor
+  stand; the page says why); `webglcontextrestored` → dispose and rebuild once from the same module kit. Measured by
+  scripts/verify-app-renders.mjs --lose-context on /tasks: `refused:CONTEXT_LOST` during, `drawn` after.
+
+verify-app-renders.mjs (the plan's gate script, new): every route from the ONE route list (scripts/instrument-routes.mjs, lifted from the
+  instrument's router parse — 80 routes, 77 seated) × DPR {1,2} × width {1440,768}; a route passes when the stage says drawn or a
+  refusal is on the DOM in words and the page has content; a silent blank fails the run. Seats only where the app seats.
+  The reduced matrix, stated as run (the full 320-page matrix costs ~50 s a page on SwiftShader — an afternoon — and was stopped):
+    1× wide, every route:              80 checks · 0 failures (stage drawn or a refusal in words, and content on the page)
+    2× and 768 px, the six-route subset: 12 checks · 0 failures
+    reduced motion (/tasks, /command-deck, /select): 3 checks · 0 failures
+    context lost then restored (/tasks, /command-deck, /bd-kpis): 3 checks · 0 failures — `refused:CONTEXT_LOST` during, `drawn` after;
+      the deck rebuilds the stage, a hero and the environment map and needs more than 1.5 s, so the verifier waits (bounded, 10 s) for
+      `drawn` rather than sleeping — its first run had read that recovery in progress as NO-RECOVERY.
+
+THE GLASS FLOORS, RE-MEASURED (scripts/measure-stage-luminance.mjs — the bare stage under the page's content rect, relative luminance)
+  The page's content rect covers the ROOM seen through the glass (floor, glows, horizon), not just the plate's face at its bottom edge —
+  so the ceiling is about everything the page stands over. Before: dark p95 .037 / p99 .041 / max .096 on /tasks, with 2.3 % of pixels
+  over the .04 ceiling, ALL in a stripe at 62–73 % of the rect's height across 89 % of its width — the cores of the room-glow pools
+  under body text (P3 spent the ceiling on blue; the cores overshot it 2.4×). Plate roughness .28 → .5 changed nothing (reverted): not
+  the specular. glowGain dark .20 → .14: p95 .033 / p99 .036 on /tasks, .030 / .035 on /command-deck, over-ceiling share 0.0 %; the
+  residual max (.094 / .079) is the machined rims of the pucks — a few pixels per puck. Light: p05 .596 over the .55 floor, p95 .851
+  under the .96 ceiling; 0.1–0.2 % of pixels under the floor in the top fifth (min .52 — the far edge where the glows meet the plate),
+  recorded, not tuned. The arrival's brighter pools keep their ratio to the quiet glow; only the absolute level moved.
+
+2× AND NARROW (the instrument at INSTRUMENT_DPR=2 and INSTRUMENT_VIEWPORT=768x1100 over six routes; hero rects scaled to device px)
+  2× (six routes, both themes, all REACHED): GL coverage equals the 1× record to the point — /lcxos 18/20 %, /select 95/96, /tasks 45/55,
+  /market-map 32/38, /bd-kpis 11/21, /command-deck 29/35 — and the hero panels too (globe .65/.81, surface .83/.92): the scene scales with
+  device pixels and the panel rects are read in device px. The arrival completes at 2× (steps 3/3 on all twelve captures). Stage redraw
+  on the software rasteriser at 2×: 4.1–8.5 ms (informational; the budget is judged on the GPU above).
+  768 px (six routes): every route REACHES once the instrument's proof of a mounted shell stopped being the status footer's text (the
+  narrow layout hides it — four seated routes had read SHELL_NEVER_MOUNTED while the page stood there; the anchor is `main` below
+  1024 px). GL coverage /lcxos 34/37 %, /select 91/93, /tasks 36/49, /market-map 25/33 (globe panel .63/.78), /bd-kpis 14/19,
+  /command-deck 20/28. The surface relief's panel reads 0 dark / .29 light at 768: the section sits BELOW THE FOLD of a 768×1100
+  capture, off-screen, not refused — a layout fact of the narrow deck, recorded as such. The arrival completes 3/3 on all twelve
+  captures; the markers land; the room is visible beside the page (the puck and the plate's edge at bottom-left of the capture).
+
+MEMORY: the JS heap sampled at rest per capture — 28–38 MB across the six 2× captures (max /bd-kpis, /command-deck, /market-map light at 38 MB); the full sweep: median 33 MB over 160 captures, max 61 MB on /ontology light.
+
+PAPER: both GL hosts are print:hidden (glHostsPrintHidden.test pins it from source); the Forge's still and the plain page are what
+  the sheet carries.
+
+THE FLAKE CLASS: keyboardday.spec.ts:719 read Decide's box while a slow runner's smooth scroll was still moving (failed on 83af9c4
+  and 8fc1206, passed on rerun both times). It now waits until the scroller's scrollTop is unchanged across two frames — a settle, not
+  a sleep.
+
+MEASURED (the full sweep on this tree)
+  THE SWEEP (docs/instrument/audit/production-p8; 79 routes × 2 themes, fixtures incl. heroes and desk charts, one-page-load pairs,
+    warm-up 80 routes / 181 s):
+    dark: GL visible on 79 → 74 of 79 · median 35% → 34% · ≥ 50% on 2 → 2 · ≥ 35% on 39 → 37 · ≥ 20% on 51 → 51
+    light: GL visible on 79 → 79 of 79 · median 43% → 43% · ≥ 50% on 34 → 34 · ≥ 35% on 47 → 47 · ≥ 20% on 60 → 60
+    DESK ROUTES (P7 → P8; "figures" says whether content rendered — with the fixtures the desks are opaque cards over the plate):
+    /bd-kpis               dark  11% →  10% · light  21% →  21% · figures 40 · errors 0
+    /win-loss              dark  12% →  11% · light  19% →  19% · figures 35 · errors 0
+    /forecast              dark   8% →   7% · light  14% →  14% · figures 50 · errors 0
+    /scorecard             dark  23% →  22% · light  29% →  29% · figures 26 · errors 0
+    /command-deck          dark  29% →  29% · light  35% →  35% · figures 37 · errors 0
+    /bd-pipeline           dark  27% →  27% · light  52% →  52% · figures 18 · errors 0
+    /command               dark  19% →  18% · light  34% →  34% · figures 94 · errors 0
+    /regulatory-dashboard  dark   7% →   7% · light  14% →  14% · figures 80 · errors 0
+    /distribution          dark  22% →  22% · light  34% →  34% · figures 62 · errors 0
+    /marketing             dark  31% →  31% · light  43% →  43% · figures 11 · errors 0
+    /gps                   dark  14% →  14% · light  26% →  26% · figures 54 · errors 0
+    /wbr                   dark  17% →  17% · light  25% →  25% · figures 50 · errors 0
+    Hero panels held: orrery 79%/83% · pipeline 43%/86% · globe 65%/81% · vault 31%/87% · storm —/— · surface 83%/92%. Chrome-fade text hits: 0. Stage redraw: n 154, median 3.9 ms, p90 4.4, max 15.1, over 8: 2.
+    Standing: continuity 77 → 77 · motion at rest 0 → 0 · max intervals 2 → 2 · rAF loops 0 → 0 · GL contexts 79 → 79 · page errors 0 → 0.
+    THE ARRIVAL (P7): 154 captures saw the watch arrive with 3 ranked items · sweep complete at rest (steps === items) on 154 · frames during the sweep ≤ items+1 on 154 (worst 3) · rAF at rest: see Standing
+    MEMORY (P8): JS heap at rest over 160 captures · median 33 MB · max 61 MB on /ontology light
+  READ HONESTLY.
+  · Dark GL visible 79 → 74: the five are /states (5.7 → 4.8 %), /products (5.1 → 4.3 %), /howey (5.5 → 4.7 %), /roadmap (5.1 → 4.3 %), /competition (5.6 → 4.7 %) — routes whose only GL through the glass was the room glow's wash; glowGain
+    .20 → .14 (the ceiling fix above) put that wash under the visibility detector's threshold. The light column is unchanged to the
+    point (43 %, 79/79). The trade is stated: a dimmer room that honours the text ceiling, and five dark routes where the room no
+    longer registers as a difference. The pools under changed rooms are unchanged in ratio.
+  · Stage redraw max 15.1 ms with 2 frames over 8 ms on the software rasteriser (median 3.9, p90 4.4): the two are the first frames of
+    their captures; the budget is judged on the host GPU above (p90 ≤ 7.2).
+  · Memory: median 33 MB at rest; the 61 MB max is /ontology light (the orrery's geometry plus the ontology dataset), well under
+    any ceiling a laptop tab imposes; recorded as the figure to hold.
+
+
+gate: root ci-check clean on run 1 ; 0 npm error, 0 unhandled: 57/1997 · 20/373 · 170(+1 skipped)/3532(+14 skipped) · 210/2818 · 2/20 · web build 20.58s · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 360/440 · passthrough 1025/1152 · 210 lazy page chunks

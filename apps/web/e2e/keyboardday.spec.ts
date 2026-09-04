@@ -728,6 +728,14 @@ test('flow 2 fast path — `f` collapses the deck traversal from eleven presses 
   // scrolls the app's own scroller (`MainContent`, not the window) because focus is inside
   // it — which is also why the layer listens for scroll in the capture phase.
   await keys.scrollWithKey('End');
+  // SETTLE, DON'T SLEEP (P8): on a slow runner the smooth scroll is still moving when the box is read and the chip lands
+  // elsewhere — this spec failed on 83af9c4 and 8fc1206 that way and passed on rerun both times. Wait until the scroller's
+  // scrollTop is unchanged across two animation frames; bounded by the assertion's own timeout, never a fixed sleep.
+  await page.waitForFunction(() => new Promise((res) => {
+    const sc = document.querySelector('main') ?? document.scrollingElement;
+    const a = sc?.scrollTop ?? 0;
+    requestAnimationFrame(() => requestAnimationFrame(() => res((sc?.scrollTop ?? 0) === a)));
+  }), undefined, { timeout: 5_000 });
   const box = await page.getByRole('button', { name: 'Decide' }).first().boundingBox();
   expect(box, 'Decide never came into view, so `f` could not tag it').toBeTruthy();
 

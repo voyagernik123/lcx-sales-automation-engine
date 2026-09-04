@@ -1,6 +1,6 @@
-# THE PRODUCTION — GALLERY · P7 · LIVENESS: the truth arriving as light — rooms lit in rank order on the arrival sweep, measured as one bounded sequence
+# THE PRODUCTION — GALLERY · P8 · HARDENING: 2×, narrow, context loss, reduced motion, paper — measured on the host GPU
 
-> HEAD `8fc1206` · run 2026-09-04T07:12:51.281Z · 80 routes × 2 themes, captured as shipped and with every GL layer forced off
+> HEAD `8b2773a` · run 2026-09-04T08:52:50.139Z · 80 routes × 2 themes, captured as shipped and with every GL layer forced off
 > (`window.__LCX_GL_OFF` → `createStage` refuses `FORCED_OFF_FOR_MEASUREMENT`; relief preferences seeded off).
 > **GL coverage** = share of viewport pixels that differ between the two captures (any channel > 8/255). This is the
 > number that says whether the 3D is VISIBLE on a route. The controls: a known 40% GL area reads 40% ± 1; identical
@@ -9,8 +9,8 @@
 | | dark | light |
 |---|---|---|
 | pairs excluded — the two captures showed different page text (†) | 0 | 0 |
-| routes where GL is visible (coverage > 5%) | **79** of 80 | **79** of 80 |
-| median GL coverage of the viewport | **35%** | **43%** |
+| routes where GL is visible (coverage > 5%) | **74** of 80 | **79** of 80 |
+| median GL coverage of the viewport | **34%** | **43%** |
 
 ### dark
 
@@ -19,83 +19,83 @@
 | `/lcxos` | ![shipped](gallery/lcxos-dark-on.webp) | ![GL off](gallery/lcxos-dark-off.webp) | **18%** | 23.5 |
 | `/portal` | ![shipped](gallery/portal-dark-on.webp) | ![GL off](gallery/portal-dark-off.webp) | **0%** | 0.0 |
 | `/select` | ![shipped](gallery/select-dark-on.webp) | ![GL off](gallery/select-dark-off.webp) | **95%** | 25.4 |
-| `/*` | ![shipped](gallery/root-dark-on.webp) | ![GL off](gallery/root-dark-off.webp) | **40%** | 9.2 |
-| `/regulatory-dashboard` | ![shipped](gallery/regulatory_dashboard-dark-on.webp) | ![GL off](gallery/regulatory_dashboard-dark-off.webp) | **7%** | 12.9 |
-| `/ontology` | ![shipped](gallery/ontology-dark-on.webp) | ![GL off](gallery/ontology-dark-off.webp) | **59%** · orrery 79% | 14.5 |
-| `/states` | ![shipped](gallery/states-dark-on.webp) | ![GL off](gallery/states-dark-off.webp) | **6%** | 10.9 |
-| `/products` | ![shipped](gallery/products-dark-on.webp) | ![GL off](gallery/products-dark-off.webp) | **5%** | 11.2 |
-| `/simulator` | ![shipped](gallery/simulator-dark-on.webp) | ![GL off](gallery/simulator-dark-off.webp) | **6%** | 10.7 |
-| `/howey` | ![shipped](gallery/howey-dark-on.webp) | ![GL off](gallery/howey-dark-off.webp) | **6%** | 11.0 |
-| `/scenario` | ![shipped](gallery/scenario-dark-on.webp) | ![GL off](gallery/scenario-dark-off.webp) | **6%** | 10.8 |
-| `/readiness` | ![shipped](gallery/readiness-dark-on.webp) | ![GL off](gallery/readiness-dark-off.webp) | **18%** | 9.5 |
-| `/brief-generator` | ![shipped](gallery/brief_generator-dark-on.webp) | ![GL off](gallery/brief_generator-dark-off.webp) | **7%** | 10.6 |
-| `/capital-estimator` | ![shipped](gallery/capital_estimator-dark-on.webp) | ![GL off](gallery/capital_estimator-dark-off.webp) | **6%** | 10.8 |
-| `/roadmap` | ![shipped](gallery/roadmap-dark-on.webp) | ![GL off](gallery/roadmap-dark-off.webp) | **5%** | 11.2 |
-| `/red-flags` | ![shipped](gallery/red_flags-dark-on.webp) | ![GL off](gallery/red_flags-dark-off.webp) | **7%** | 11.1 |
-| `/settings` | ![shipped](gallery/settings-dark-on.webp) | ![GL off](gallery/settings-dark-off.webp) | **7%** | 16.1 |
-| `/competition` | ![shipped](gallery/competition-dark-on.webp) | ![GL off](gallery/competition-dark-off.webp) | **6%** | 10.7 |
-| `/product-intel` | ![shipped](gallery/product_intel-dark-on.webp) | ![GL off](gallery/product_intel-dark-off.webp) | **6%** | 10.5 |
-| `/bd-pipeline` | ![shipped](gallery/bd_pipeline-dark-on.webp) | ![GL off](gallery/bd_pipeline-dark-off.webp) | **27%** · pipeline 43% | 15.6 |
-| `/bd-pipeline/:id` | ![shipped](gallery/bd_pipeline_probe-dark-on.webp) | ![GL off](gallery/bd_pipeline_probe-dark-off.webp) | **36%** | 9.5 |
-| `/contacts/:id` | ![shipped](gallery/contacts_probe-dark-on.webp) | ![GL off](gallery/contacts_probe-dark-off.webp) | **37%** | 9.5 |
-| `/claim-library` | ![shipped](gallery/claim_library-dark-on.webp) | ![GL off](gallery/claim_library-dark-off.webp) | **37%** | 9.5 |
-| `/outreach` | ![shipped](gallery/outreach-dark-on.webp) | ![GL off](gallery/outreach-dark-off.webp) | **6%** | 18.1 |
-| `/send-queue` | ![shipped](gallery/send_queue-dark-on.webp) | ![GL off](gallery/send_queue-dark-off.webp) | **37%** | 9.5 |
-| `/exchange-gaps` | ![shipped](gallery/exchange_gaps-dark-on.webp) | ![GL off](gallery/exchange_gaps-dark-off.webp) | **37%** | 9.5 |
-| `/deal-board` | ![shipped](gallery/deal_board-dark-on.webp) | ![GL off](gallery/deal_board-dark-off.webp) | **37%** | 9.6 |
-| `/tasks` | ![shipped](gallery/tasks-dark-on.webp) | ![GL off](gallery/tasks-dark-off.webp) | **40%** | 9.2 |
-| `/market-map` | ![shipped](gallery/market_map-dark-on.webp) | ![GL off](gallery/market_map-dark-off.webp) | **29%** · globe 65% | 20.2 |
-| `/graph` | ![shipped](gallery/graph-dark-on.webp) | ![GL off](gallery/graph-dark-off.webp) | **6%** | 10.4 |
-| `/monitors` | ![shipped](gallery/monitors-dark-on.webp) | ![GL off](gallery/monitors-dark-off.webp) | **36%** | 8.6 |
-| `/targets` | ![shipped](gallery/targets-dark-on.webp) | ![GL off](gallery/targets-dark-off.webp) | **37%** | 9.5 |
-| `/brief` | ![shipped](gallery/brief-dark-on.webp) | ![GL off](gallery/brief-dark-off.webp) | **38%** | 8.4 |
-| `/forecast` | ![shipped](gallery/forecast-dark-on.webp) | ![GL off](gallery/forecast-dark-off.webp) | **8%** | 12.2 |
-| `/command` | ![shipped](gallery/command-dark-on.webp) | ![GL off](gallery/command-dark-off.webp) | **19%** | 8.1 |
-| `/scorecard` | ![shipped](gallery/scorecard-dark-on.webp) | ![GL off](gallery/scorecard-dark-off.webp) | **23%** | 9.4 |
-| `/coverage/:id` | ![shipped](gallery/coverage_probe-dark-on.webp) | ![GL off](gallery/coverage_probe-dark-off.webp) | **37%** | 9.5 |
-| `/customer/:id` | ![shipped](gallery/customer_probe-dark-on.webp) | ![GL off](gallery/customer_probe-dark-off.webp) | **37%** | 9.5 |
-| `/notes` | ![shipped](gallery/notes-dark-on.webp) | ![GL off](gallery/notes-dark-off.webp) | **40%** | 9.2 |
-| `/notes/:projectId` | ![shipped](gallery/notes_probe-dark-on.webp) | ![GL off](gallery/notes_probe-dark-off.webp) | **31%** | 8.6 |
-| `/win-loss` | ![shipped](gallery/win_loss-dark-on.webp) | ![GL off](gallery/win_loss-dark-off.webp) | **12%** | 9.8 |
-| `/ai-tools` | ![shipped](gallery/ai_tools-dark-on.webp) | ![GL off](gallery/ai_tools-dark-off.webp) | **36%** | 8.6 |
-| `/outreach-ops` | ![shipped](gallery/outreach_ops-dark-on.webp) | ![GL off](gallery/outreach_ops-dark-off.webp) | **36%** | 9.6 |
-| `/deal-desk` | ![shipped](gallery/deal_desk-dark-on.webp) | ![GL off](gallery/deal_desk-dark-off.webp) | **17%** | 10.4 |
-| `/integrations` | ![shipped](gallery/integrations-dark-on.webp) | ![GL off](gallery/integrations-dark-off.webp) | **16%** | 10.9 |
-| `/board-report` | ![shipped](gallery/board_report-dark-on.webp) | ![GL off](gallery/board_report-dark-off.webp) | **38%** | 8.4 |
-| `/market-news` | ![shipped](gallery/market_news-dark-on.webp) | ![GL off](gallery/market_news-dark-off.webp) | **34%** | 8.8 |
-| `/report-builder` | ![shipped](gallery/report_builder-dark-on.webp) | ![GL off](gallery/report_builder-dark-off.webp) | **37%** | 8.4 |
-| `/bd-kpis` | ![shipped](gallery/bd_kpis-dark-on.webp) | ![GL off](gallery/bd_kpis-dark-off.webp) | **11%** | 11.1 |
-| `/audit-log` | ![shipped](gallery/audit_log-dark-on.webp) | ![GL off](gallery/audit_log-dark-off.webp) | **31%** · vault 31% | 15.3 |
-| `/ops` | ![shipped](gallery/ops-dark-on.webp) | ![GL off](gallery/ops-dark-off.webp) | **45%** | 9.7 |
-| `/wbr` | ![shipped](gallery/wbr-dark-on.webp) | ![GL off](gallery/wbr-dark-off.webp) | **17%** | 12.2 |
-| `/readout` | ![shipped](gallery/readout-dark-on.webp) | ![GL off](gallery/readout-dark-off.webp) | **40%** | 9.2 |
-| `/access` | ![shipped](gallery/access-dark-on.webp) | ![GL off](gallery/access-dark-off.webp) | **21%** | 10.6 |
-| `/distribution` | ![shipped](gallery/distribution-dark-on.webp) | ![GL off](gallery/distribution-dark-off.webp) | **22%** | 10.5 |
-| `/distribution/atlas` | ![shipped](gallery/distribution_atlas-dark-on.webp) | ![GL off](gallery/distribution_atlas-dark-off.webp) | **43%** | 9.8 |
-| `/distribution/listings` | ![shipped](gallery/distribution_listings-dark-on.webp) | ![GL off](gallery/distribution_listings-dark-off.webp) | **43%** | 9.8 |
-| `/distribution/campaigns` | ![shipped](gallery/distribution_campaigns-dark-on.webp) | ![GL off](gallery/distribution_campaigns-dark-off.webp) | **40%** | 10.1 |
-| `/distribution/geo` | ![shipped](gallery/distribution_geo-dark-on.webp) | ![GL off](gallery/distribution_geo-dark-off.webp) | **43%** | 9.8 |
-| `/marketing` | ![shipped](gallery/marketing-dark-on.webp) | ![GL off](gallery/marketing-dark-off.webp) | **31%** | 10.7 |
-| `/marketing/desk` | ![shipped](gallery/marketing_desk-dark-on.webp) | ![GL off](gallery/marketing_desk-dark-off.webp) | **44%** | 9.8 |
-| `/marketing/record` | ![shipped](gallery/marketing_record-dark-on.webp) | ![GL off](gallery/marketing_record-dark-off.webp) | **35%** | 10.7 |
-| `/marketing/crisis` | ![shipped](gallery/marketing_crisis-dark-on.webp) | ![GL off](gallery/marketing_crisis-dark-off.webp) | **20%** · storm — | 10.4 |
-| `/marketing/holdings` | ![shipped](gallery/marketing_holdings-dark-on.webp) | ![GL off](gallery/marketing_holdings-dark-off.webp) | **38%** | 10.0 |
-| `/gps` | ![shipped](gallery/gps-dark-on.webp) | ![GL off](gallery/gps-dark-off.webp) | **14%** | 12.1 |
-| `/gps/book` | ![shipped](gallery/gps_book-dark-on.webp) | ![GL off](gallery/gps_book-dark-off.webp) | **43%** | 9.6 |
-| `/gps/underwriting` | ![shipped](gallery/gps_underwriting-dark-on.webp) | ![GL off](gallery/gps_underwriting-dark-off.webp) | **36%** | 10.2 |
-| `/gps/origination` | ![shipped](gallery/gps_origination-dark-on.webp) | ![GL off](gallery/gps_origination-dark-off.webp) | **42%** | 9.7 |
-| `/gps/conflict` | ![shipped](gallery/gps_conflict-dark-on.webp) | ![GL off](gallery/gps_conflict-dark-off.webp) | **36%** | 10.3 |
-| `/gps/delivery` | ![shipped](gallery/gps_delivery-dark-on.webp) | ![GL off](gallery/gps_delivery-dark-off.webp) | **43%** | 9.6 |
-| `/gps/loop` | ![shipped](gallery/gps_loop-dark-on.webp) | ![GL off](gallery/gps_loop-dark-off.webp) | **43%** | 9.6 |
-| `/gps/inputs` | ![shipped](gallery/gps_inputs-dark-on.webp) | ![GL off](gallery/gps_inputs-dark-off.webp) | **41%** | 9.9 |
-| `/gps/partner-registry` | ![shipped](gallery/gps_partner_registry-dark-on.webp) | ![GL off](gallery/gps_partner_registry-dark-off.webp) | **43%** | 9.6 |
-| `/governance/controls` | ![shipped](gallery/governance_controls-dark-on.webp) | ![GL off](gallery/governance_controls-dark-off.webp) | **25%** | 10.1 |
-| `/decisions` | ![shipped](gallery/decisions-dark-on.webp) | ![GL off](gallery/decisions-dark-off.webp) | **45%** | 9.7 |
-| `/command-deck` | ![shipped](gallery/command_deck-dark-on.webp) | ![GL off](gallery/command_deck-dark-off.webp) | **29%** · surface 83% | 16.7 |
-| `/command-partners` | ![shipped](gallery/command_partners-dark-on.webp) | ![GL off](gallery/command_partners-dark-off.webp) | **38%** | 9.8 |
-| `/command-ops` | ![shipped](gallery/command_ops-dark-on.webp) | ![GL off](gallery/command_ops-dark-off.webp) | **38%** | 9.8 |
-| `/cheat-card` | ![shipped](gallery/cheat_card-dark-on.webp) | ![GL off](gallery/cheat_card-dark-off.webp) | **18%** | 10.4 |
-| `/practice` | ![shipped](gallery/practice-dark-on.webp) | ![GL off](gallery/practice-dark-off.webp) | **18%** | 9.4 |
+| `/*` | ![shipped](gallery/root-dark-on.webp) | ![GL off](gallery/root-dark-off.webp) | **40%** | 8.2 |
+| `/regulatory-dashboard` | ![shipped](gallery/regulatory_dashboard-dark-on.webp) | ![GL off](gallery/regulatory_dashboard-dark-off.webp) | **7%** | 11.8 |
+| `/ontology` | ![shipped](gallery/ontology-dark-on.webp) | ![GL off](gallery/ontology-dark-off.webp) | **58%** · orrery 79% | 14.6 |
+| `/states` | ![shipped](gallery/states-dark-on.webp) | ![GL off](gallery/states-dark-off.webp) | **5%** | 11.2 |
+| `/products` | ![shipped](gallery/products-dark-on.webp) | ![GL off](gallery/products-dark-off.webp) | **4%** | 11.6 |
+| `/simulator` | ![shipped](gallery/simulator-dark-on.webp) | ![GL off](gallery/simulator-dark-off.webp) | **5%** | 10.8 |
+| `/howey` | ![shipped](gallery/howey-dark-on.webp) | ![GL off](gallery/howey-dark-off.webp) | **5%** | 11.2 |
+| `/scenario` | ![shipped](gallery/scenario-dark-on.webp) | ![GL off](gallery/scenario-dark-off.webp) | **5%** | 10.9 |
+| `/readiness` | ![shipped](gallery/readiness-dark-on.webp) | ![GL off](gallery/readiness-dark-off.webp) | **17%** | 8.8 |
+| `/brief-generator` | ![shipped](gallery/brief_generator-dark-on.webp) | ![GL off](gallery/brief_generator-dark-off.webp) | **6%** | 10.6 |
+| `/capital-estimator` | ![shipped](gallery/capital_estimator-dark-on.webp) | ![GL off](gallery/capital_estimator-dark-off.webp) | **5%** | 10.9 |
+| `/roadmap` | ![shipped](gallery/roadmap-dark-on.webp) | ![GL off](gallery/roadmap-dark-off.webp) | **4%** | 11.6 |
+| `/red-flags` | ![shipped](gallery/red_flags-dark-on.webp) | ![GL off](gallery/red_flags-dark-off.webp) | **6%** | 11.0 |
+| `/settings` | ![shipped](gallery/settings-dark-on.webp) | ![GL off](gallery/settings-dark-off.webp) | **7%** | 14.5 |
+| `/competition` | ![shipped](gallery/competition-dark-on.webp) | ![GL off](gallery/competition-dark-off.webp) | **5%** | 11.0 |
+| `/product-intel` | ![shipped](gallery/product_intel-dark-on.webp) | ![GL off](gallery/product_intel-dark-off.webp) | **5%** | 10.6 |
+| `/bd-pipeline` | ![shipped](gallery/bd_pipeline-dark-on.webp) | ![GL off](gallery/bd_pipeline-dark-off.webp) | **27%** · pipeline 43% | 15.2 |
+| `/bd-pipeline/:id` | ![shipped](gallery/bd_pipeline_probe-dark-on.webp) | ![GL off](gallery/bd_pipeline_probe-dark-off.webp) | **36%** | 8.4 |
+| `/contacts/:id` | ![shipped](gallery/contacts_probe-dark-on.webp) | ![GL off](gallery/contacts_probe-dark-off.webp) | **36%** | 8.4 |
+| `/claim-library` | ![shipped](gallery/claim_library-dark-on.webp) | ![GL off](gallery/claim_library-dark-off.webp) | **36%** | 8.4 |
+| `/outreach` | ![shipped](gallery/outreach-dark-on.webp) | ![GL off](gallery/outreach-dark-off.webp) | **6%** | 16.1 |
+| `/send-queue` | ![shipped](gallery/send_queue-dark-on.webp) | ![GL off](gallery/send_queue-dark-off.webp) | **36%** | 8.4 |
+| `/exchange-gaps` | ![shipped](gallery/exchange_gaps-dark-on.webp) | ![GL off](gallery/exchange_gaps-dark-off.webp) | **36%** | 8.4 |
+| `/deal-board` | ![shipped](gallery/deal_board-dark-on.webp) | ![GL off](gallery/deal_board-dark-off.webp) | **36%** | 8.5 |
+| `/tasks` | ![shipped](gallery/tasks-dark-on.webp) | ![GL off](gallery/tasks-dark-off.webp) | **40%** | 8.2 |
+| `/market-map` | ![shipped](gallery/market_map-dark-on.webp) | ![GL off](gallery/market_map-dark-off.webp) | **28%** · globe 65% | 20.1 |
+| `/graph` | ![shipped](gallery/graph-dark-on.webp) | ![GL off](gallery/graph-dark-off.webp) | **5%** | 10.5 |
+| `/monitors` | ![shipped](gallery/monitors-dark-on.webp) | ![GL off](gallery/monitors-dark-off.webp) | **35%** | 7.7 |
+| `/targets` | ![shipped](gallery/targets-dark-on.webp) | ![GL off](gallery/targets-dark-off.webp) | **36%** | 8.4 |
+| `/brief` | ![shipped](gallery/brief-dark-on.webp) | ![GL off](gallery/brief-dark-off.webp) | **36%** | 7.6 |
+| `/forecast` | ![shipped](gallery/forecast-dark-on.webp) | ![GL off](gallery/forecast-dark-off.webp) | **7%** | 11.4 |
+| `/command` | ![shipped](gallery/command-dark-on.webp) | ![GL off](gallery/command-dark-off.webp) | **18%** | 7.6 |
+| `/scorecard` | ![shipped](gallery/scorecard-dark-on.webp) | ![GL off](gallery/scorecard-dark-off.webp) | **22%** | 8.5 |
+| `/coverage/:id` | ![shipped](gallery/coverage_probe-dark-on.webp) | ![GL off](gallery/coverage_probe-dark-off.webp) | **36%** | 8.4 |
+| `/customer/:id` | ![shipped](gallery/customer_probe-dark-on.webp) | ![GL off](gallery/customer_probe-dark-off.webp) | **36%** | 8.4 |
+| `/notes` | ![shipped](gallery/notes-dark-on.webp) | ![GL off](gallery/notes-dark-off.webp) | **40%** | 8.2 |
+| `/notes/:projectId` | ![shipped](gallery/notes_probe-dark-on.webp) | ![GL off](gallery/notes_probe-dark-off.webp) | **30%** | 7.8 |
+| `/win-loss` | ![shipped](gallery/win_loss-dark-on.webp) | ![GL off](gallery/win_loss-dark-off.webp) | **11%** | 9.2 |
+| `/ai-tools` | ![shipped](gallery/ai_tools-dark-on.webp) | ![GL off](gallery/ai_tools-dark-off.webp) | **35%** | 7.8 |
+| `/outreach-ops` | ![shipped](gallery/outreach_ops-dark-on.webp) | ![GL off](gallery/outreach_ops-dark-off.webp) | **36%** | 8.5 |
+| `/deal-desk` | ![shipped](gallery/deal_desk-dark-on.webp) | ![GL off](gallery/deal_desk-dark-off.webp) | **17%** | 9.4 |
+| `/integrations` | ![shipped](gallery/integrations-dark-on.webp) | ![GL off](gallery/integrations-dark-off.webp) | **16%** | 9.8 |
+| `/board-report` | ![shipped](gallery/board_report-dark-on.webp) | ![GL off](gallery/board_report-dark-off.webp) | **36%** | 7.6 |
+| `/market-news` | ![shipped](gallery/market_news-dark-on.webp) | ![GL off](gallery/market_news-dark-off.webp) | **34%** | 7.9 |
+| `/report-builder` | ![shipped](gallery/report_builder-dark-on.webp) | ![GL off](gallery/report_builder-dark-off.webp) | **36%** | 7.6 |
+| `/bd-kpis` | ![shipped](gallery/bd_kpis-dark-on.webp) | ![GL off](gallery/bd_kpis-dark-off.webp) | **10%** | 10.2 |
+| `/audit-log` | ![shipped](gallery/audit_log-dark-on.webp) | ![GL off](gallery/audit_log-dark-off.webp) | **31%** · vault 31% | 14.8 |
+| `/ops` | ![shipped](gallery/ops-dark-on.webp) | ![GL off](gallery/ops-dark-off.webp) | **45%** | 8.8 |
+| `/wbr` | ![shipped](gallery/wbr-dark-on.webp) | ![GL off](gallery/wbr-dark-off.webp) | **17%** | 11.3 |
+| `/readout` | ![shipped](gallery/readout-dark-on.webp) | ![GL off](gallery/readout-dark-off.webp) | **40%** | 8.2 |
+| `/access` | ![shipped](gallery/access-dark-on.webp) | ![GL off](gallery/access-dark-off.webp) | **21%** | 9.9 |
+| `/distribution` | ![shipped](gallery/distribution-dark-on.webp) | ![GL off](gallery/distribution-dark-off.webp) | **22%** | 9.7 |
+| `/distribution/atlas` | ![shipped](gallery/distribution_atlas-dark-on.webp) | ![GL off](gallery/distribution_atlas-dark-off.webp) | **43%** | 8.8 |
+| `/distribution/listings` | ![shipped](gallery/distribution_listings-dark-on.webp) | ![GL off](gallery/distribution_listings-dark-off.webp) | **43%** | 8.8 |
+| `/distribution/campaigns` | ![shipped](gallery/distribution_campaigns-dark-on.webp) | ![GL off](gallery/distribution_campaigns-dark-off.webp) | **40%** | 9.1 |
+| `/distribution/geo` | ![shipped](gallery/distribution_geo-dark-on.webp) | ![GL off](gallery/distribution_geo-dark-off.webp) | **43%** | 8.8 |
+| `/marketing` | ![shipped](gallery/marketing-dark-on.webp) | ![GL off](gallery/marketing-dark-off.webp) | **31%** | 9.7 |
+| `/marketing/desk` | ![shipped](gallery/marketing_desk-dark-on.webp) | ![GL off](gallery/marketing_desk-dark-off.webp) | **43%** | 8.8 |
+| `/marketing/record` | ![shipped](gallery/marketing_record-dark-on.webp) | ![GL off](gallery/marketing_record-dark-off.webp) | **34%** | 9.6 |
+| `/marketing/crisis` | ![shipped](gallery/marketing_crisis-dark-on.webp) | ![GL off](gallery/marketing_crisis-dark-off.webp) | **19%** · storm — | 9.7 |
+| `/marketing/holdings` | ![shipped](gallery/marketing_holdings-dark-on.webp) | ![GL off](gallery/marketing_holdings-dark-off.webp) | **38%** | 9.1 |
+| `/gps` | ![shipped](gallery/gps-dark-on.webp) | ![GL off](gallery/gps-dark-off.webp) | **14%** | 11.1 |
+| `/gps/book` | ![shipped](gallery/gps_book-dark-on.webp) | ![GL off](gallery/gps_book-dark-off.webp) | **43%** | 8.6 |
+| `/gps/underwriting` | ![shipped](gallery/gps_underwriting-dark-on.webp) | ![GL off](gallery/gps_underwriting-dark-off.webp) | **35%** | 9.2 |
+| `/gps/origination` | ![shipped](gallery/gps_origination-dark-on.webp) | ![GL off](gallery/gps_origination-dark-off.webp) | **42%** | 8.7 |
+| `/gps/conflict` | ![shipped](gallery/gps_conflict-dark-on.webp) | ![GL off](gallery/gps_conflict-dark-off.webp) | **36%** | 9.2 |
+| `/gps/delivery` | ![shipped](gallery/gps_delivery-dark-on.webp) | ![GL off](gallery/gps_delivery-dark-off.webp) | **43%** | 8.6 |
+| `/gps/loop` | ![shipped](gallery/gps_loop-dark-on.webp) | ![GL off](gallery/gps_loop-dark-off.webp) | **43%** | 8.6 |
+| `/gps/inputs` | ![shipped](gallery/gps_inputs-dark-on.webp) | ![GL off](gallery/gps_inputs-dark-off.webp) | **41%** | 8.9 |
+| `/gps/partner-registry` | ![shipped](gallery/gps_partner_registry-dark-on.webp) | ![GL off](gallery/gps_partner_registry-dark-off.webp) | **43%** | 8.6 |
+| `/governance/controls` | ![shipped](gallery/governance_controls-dark-on.webp) | ![GL off](gallery/governance_controls-dark-off.webp) | **25%** | 9.1 |
+| `/decisions` | ![shipped](gallery/decisions-dark-on.webp) | ![GL off](gallery/decisions-dark-off.webp) | **45%** | 8.8 |
+| `/command-deck` | ![shipped](gallery/command_deck-dark-on.webp) | ![GL off](gallery/command_deck-dark-off.webp) | **29%** · surface 83% | 16.3 |
+| `/command-partners` | ![shipped](gallery/command_partners-dark-on.webp) | ![GL off](gallery/command_partners-dark-off.webp) | **38%** | 8.8 |
+| `/command-ops` | ![shipped](gallery/command_ops-dark-on.webp) | ![GL off](gallery/command_ops-dark-off.webp) | **38%** | 8.8 |
+| `/cheat-card` | ![shipped](gallery/cheat_card-dark-on.webp) | ![GL off](gallery/cheat_card-dark-off.webp) | **18%** | 9.4 |
+| `/practice` | ![shipped](gallery/practice-dark-on.webp) | ![GL off](gallery/practice-dark-off.webp) | **18%** | 8.7 |
 
 ### light
 
@@ -106,7 +106,7 @@
 | `/select` | ![shipped](gallery/select-light-on.webp) | ![GL off](gallery/select-light-off.webp) | **96%** | 22.6 |
 | `/*` | ![shipped](gallery/root-light-on.webp) | ![GL off](gallery/root-light-off.webp) | **55%** | 5.3 |
 | `/regulatory-dashboard` | ![shipped](gallery/regulatory_dashboard-light-on.webp) | ![GL off](gallery/regulatory_dashboard-light-off.webp) | **14%** | 7.7 |
-| `/ontology` | ![shipped](gallery/ontology-light-on.webp) | ![GL off](gallery/ontology-light-off.webp) | **63%** · orrery 83% | 14.9 |
+| `/ontology` | ![shipped](gallery/ontology-light-on.webp) | ![GL off](gallery/ontology-light-off.webp) | **63%** · orrery 83% | 14.8 |
 | `/states` | ![shipped](gallery/states-light-on.webp) | ![GL off](gallery/states-light-off.webp) | **8%** | 9.1 |
 | `/products` | ![shipped](gallery/products-light-on.webp) | ![GL off](gallery/products-light-off.webp) | **8%** | 9.6 |
 | `/simulator` | ![shipped](gallery/simulator-light-on.webp) | ![GL off](gallery/simulator-light-off.webp) | **9%** | 8.7 |
@@ -145,7 +145,7 @@
 | `/ai-tools` | ![shipped](gallery/ai_tools-light-on.webp) | ![GL off](gallery/ai_tools-light-off.webp) | **44%** | 5.0 |
 | `/outreach-ops` | ![shipped](gallery/outreach_ops-light-on.webp) | ![GL off](gallery/outreach_ops-light-off.webp) | **49%** | 5.4 |
 | `/deal-desk` | ![shipped](gallery/deal_desk-light-on.webp) | ![GL off](gallery/deal_desk-light-off.webp) | **23%** | 6.5 |
-| `/integrations` | ![shipped](gallery/integrations-light-on.webp) | ![GL off](gallery/integrations-light-off.webp) | **28%** | 8.3 |
+| `/integrations` | ![shipped](gallery/integrations-light-on.webp) | ![GL off](gallery/integrations-light-off.webp) | **22%** | 7.1 |
 | `/board-report` | ![shipped](gallery/board_report-light-on.webp) | ![GL off](gallery/board_report-light-off.webp) | **54%** | 4.9 |
 | `/market-news` | ![shipped](gallery/market_news-light-on.webp) | ![GL off](gallery/market_news-light-off.webp) | **42%** | 5.0 |
 | `/report-builder` | ![shipped](gallery/report_builder-light-on.webp) | ![GL off](gallery/report_builder-light-off.webp) | **52%** | 4.9 |

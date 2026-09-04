@@ -129,6 +129,18 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       const dpr = Math.min(Q.dprScale, Math.max(1, globalThis.devicePixelRatio || 1));
       const outcome = g.createStage(canvas, { alpha: false });
       if (!g.isStage(outcome)) { setState(`refused:${outcome.code}`); return; }
+      /* P8 · CONTEXT LOSS. The browser may take the GPU away (memory pressure, a driver reset, a laptop lid). Without this the
+         canvas holds whatever the compositor last had and nothing says why. Say so on the host (`refused:CONTEXT_LOST` — the DOM
+         plate and every text floor still stand), and when the context comes back rebuild ONCE from the same module kit. */
+      let restoring = false;
+      const onLost = (e: Event) => { e.preventDefault(); setState('refused:CONTEXT_LOST'); host.dataset.contextLost = String((Number(host.dataset.contextLost ?? 0)) + 1); };
+      const onRestored = () => {
+        if (restoring || !alive) return; restoring = true;
+        try { dispose?.(); } catch { /* the lost context has nothing left to free */ }
+        canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored);
+        start(g);
+      };
+      canvas.addEventListener('webglcontextlost', onLost); canvas.addEventListener('webglcontextrestored', onRestored);
       const stage = outcome; const gl = stage.gl;
       // THE ONE PRESENT PATH (P4; P3 wired it inline here first): copy → pipeline → FXAA → canvas, shared with the heroes.
       const presenter = g.createPresenter(stage);
@@ -372,7 +384,7 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={hostRef} aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10" data-stage={state}>
+    <div ref={hostRef} aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 print:hidden" data-stage={state}>
       <canvas ref={canvasRef} className="block h-full w-full" />
     </div>
   );

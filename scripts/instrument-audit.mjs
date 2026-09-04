@@ -49,6 +49,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DESK_ROUTES, allDeskFixtures, watchFixture } from './instrument-fixtures.mjs';
+import { routesFromRouter } from './instrument-routes.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'apps/web');
@@ -259,19 +260,7 @@ const count = (re, s) => { re.lastIndex = 0; let n = 0; while (re.exec(s)) n += 
 
 /* ── ROUTES ← router.tsx, and each route's module closure ───────────────────────────── */
 function readRoutes() {
-  const src = readFileSync(join(SRC, 'router.tsx'), 'utf8');
-  const imports = new Map();
-  for (const m of src.matchAll(/const (\w+) = lazy\(\(\) => import\('@\/pages\/([^']+)'\)/g)) imports.set(m[1], `pages/${m[2]}`);
-  for (const m of src.matchAll(/import \{ (\w+) \} from '@\/pages\/([^']+)'/g)) imports.set(m[1], `pages/${m[2]}`);
-  const routes = [];
-  for (const m of src.matchAll(/\{ path: '([^']+)', element: <(\w+)/g)) {
-    const raw = m[1];
-    const path = raw.startsWith('/') ? raw : `/${raw}`;
-    const probe = path.replace(/:[A-Za-z]+/g, 'probe');
-    routes.push({ path, probe, component: m[2], module: imports.get(m[2]) ?? null, seated: !['/lcxos', '/portal', '/select'].includes(path) });
-  }
-  if (routes.length < 60) refuse(`router parse found only ${routes.length} routes — the regex has drifted from router.tsx`);
-  return routes;
+  try { return routesFromRouter(SRC); } catch (e) { refuse(String(e instanceof Error ? e.message : e)); }
 }
 function resolveLocal(fromFile, spec) {
   let base;
@@ -476,10 +465,15 @@ async function validateVisibilityMaths(browser) {
   console.log(`  visibility controls: known 40% area read ${(m.coverage * 100).toFixed(1)}% (ΔE ${m.delta.toFixed(1)}); identical captures 0%`);
 }
 
+/* P8: the same sweep at 2× and on a narrow window. Device px = css px × DPR — hero panel rects are read in css px and the
+   captures in device px, so `heroRects` scales by DPR below. Defaults are the P0 baseline's. */
+const DPR = Number(process.env.INSTRUMENT_DPR ?? 1);
+const [VW, VH] = String(process.env.INSTRUMENT_VIEWPORT ?? '1440x1100').split('x').map(Number);
+const VIEWPORT = { width: VW, height: VH };
 const INPLACE_OFF = process.env.INSTRUMENT_INPLACE_OFF !== '0';   // default ON since P3: the pair from ONE page load
 async function captureRoute(browser, route, theme, glOff = false) {
   const page = await browser.newPage({
-    viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1, timezoneId: 'UTC', locale: 'en-GB',
+    viewport: VIEWPORT, deviceScaleFactor: DPR, timezoneId: 'UTC', locale: 'en-GB',
     colorScheme: theme, reducedMotion: 'no-preference', contrast: 'no-preference', forcedColors: 'none',
   });
   const errs = [];
@@ -513,7 +507,10 @@ async function captureRoute(browser, route, theme, glOff = false) {
     }
     await page.goto(BASE + route.probe, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     // The shell's own anchor for seated routes; the sign-in heading for /select; body otherwise.
-    const anchor = route.seated ? page.getByText(/NOT LEGAL ADVICE/i).first() : page.locator('body');
+    // THE SHELL'S ANCHOR (P8): the status footer's text was the proof a seated shell had mounted — and the narrow layout hides it, so
+    // every seated route read SHELL_NEVER_MOUNTED at 768 px while the page stood there. `main` is the shell's content scroller on
+    // every width; the footer text stays as the wide-layout anchor because it also proves the footer rendered.
+    const anchor = route.seated ? (VIEWPORT.width >= 1024 ? page.getByText(/NOT LEGAL ADVICE/i).first() : page.locator('main').first()) : page.locator('body');
     let reached = 'REACHED';
     try { await anchor.waitFor({ state: 'visible', timeout: 20_000 }); } catch { reached = 'SHELL_NEVER_MOUNTED'; }
     await page.waitForTimeout(1500);
@@ -729,7 +726,7 @@ async function captureRoute(browser, route, theme, glOff = false) {
       }
       return out;
     }).catch(() => null);
-    const heroRects = await page.evaluate(() => [...document.querySelectorAll('[data-hero]')].map((el) => { const r = el.getBoundingClientRect(); return { name: el.getAttribute('data-hero'), x: r.x, y: r.y, w: r.width, h: r.height }; }).filter((r) => r.w > 0 && r.h > 0)).catch(() => []);
+    const heroRects = await page.evaluate(() => [...document.querySelectorAll('[data-hero]')].map((el) => { const r = el.getBoundingClientRect(); return { name: el.getAttribute('data-hero'), x: r.x, y: r.y, w: r.width, h: r.height }; }).filter((r) => r.w > 0 && r.h > 0)).catch(() => []).then((rs) => rs.map((r) => ({ ...r, x: r.x * DPR, y: r.y * DPR, w: r.w * DPR, h: r.h * DPR })));
     try { png = await page.screenshot({ timeout: 15_000 }); if (!glOff) { writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } } catch { /* a missing shot is reported as such */ }
     // THE PAIR FROM ONE PAGE LOAD (P3): force GL off IN PLACE and shoot again. The stage disposes and blanks; every relief
     // falls back flat; nothing else about the page changes — so the two captures differ only by GL.
@@ -743,7 +740,8 @@ async function captureRoute(browser, route, theme, glOff = false) {
     }
     if (glOff) return { theme, reached, png, glOff: true, domFp, ...quiet };
     // `animations` = at rest (before the navigation); the post-return count travels beside it, never as the finding.
-    return { theme, reached, objects, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, heroRects, chromeFade, nav, pageErrors: errs.slice(0, 5), shot, png };
+    const memory = await page.evaluate(() => { const m = /** @type {any} */ (performance).memory; return m ? { usedJSHeapMB: Math.round(m.usedJSHeapSize / 1048576), totalJSHeapMB: Math.round(m.totalJSHeapSize / 1048576) } : null; }).catch(() => null);
+    return { theme, reached, objects, memory, rafPerSecond: raf1 - raf0, ...read, animations: atRest.animations, animationsBy: atRest.animationsBy, animationsAfterReturn: read.animations, stageRedrawMs, stageEnv, busyAtCapture, domFp, ...quiet, pngOff, offState, heroRects, chromeFade, nav, pageErrors: errs.slice(0, 5), shot, png };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }

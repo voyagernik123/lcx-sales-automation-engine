@@ -236,6 +236,8 @@ export function recordQualityProbe(opts: {
   /** The component that measured it, for `qualityTierReport`. */
   readonly source: string;
 }): ResolvedTier {
+  /* P8: the resolved probe, readable by the frame-budget script (scripts/measure-frame-budget.mjs) and nothing in the product. */
+  (globalThis as { __LCX_QUALITY_PROBE?: unknown }).__LCX_QUALITY_PROBE = { ...opts, at: Date.now() };
   if (resolved) return resolved;
   const { pick, gl, msAtProbeTier, probeTier, source } = opts;
 
