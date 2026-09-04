@@ -61,7 +61,7 @@ const ForgeBackdrop = lazy(() =>
  * `apps/desktop/src-tauri/tauri.conf.json`, so a release that forgets this line
  * turns the suite red instead of leaving a stale number on the front page.
  */
-export const LCXOS_VERSION = '0.5.0';
+export const LCXOS_VERSION = '0.5.1';
 /**
  * The download's size in MB, one decimal place.
  *
@@ -72,6 +72,8 @@ export const LCXOS_VERSION = '0.5.0';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  *
+ * 0.5.1: 4_463_623 bytes = 4.5 MB — THE PRODUCTION REVIEW: the workspace switcher above the page (the glass chrome bars gained a z-index), the Forge
+ *        whole beside the sign-in form, the coach mark under the top bar; measured from the artefact the publisher holds, as every line here is.
  * 0.5.0: 4_463_263 bytes = 4.5 MB — THE PRODUCTION P5–P9: the GPU charts, the machined Forge (forge.glb rides inside the app: +0.16 MB), the
  *        arrival on the stage, the hardening pass; measured from the artefact the publisher holds, as every line here is.
  * 0.4.0: 4_371_024 bytes = 4.4 MB (the published artefact; three builds of this tree read 4_370_551, 4_370_514 and

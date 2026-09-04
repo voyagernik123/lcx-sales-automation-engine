@@ -1,12 +1,12 @@
 release(desktop): v0.5.1 — the production review inside the app: the switcher above the page, the Forge whole beside the form
 
-The desktop app bundles the web build, so the ten defects fixed in the production review (0af95c9) and its second pass (WEB_SHA) — the
+The desktop app bundles the web build, so the ten defects fixed in the production review (0af95c9) and its second pass (a5df264) — the
 workspace switcher painting UNDER the page in v0.5.0 (Nik's screenshot: "wtf its overlapped"), the sign-in Forge cropped at the bottom
 ("even this logo at the bottom"), the coach mark over the Field Notes card, the win/loss hang, the globe plates — reach the desk only through
 a new build. The six version homes read 0.5.1 (apps/desktop/package.json, apps/web/package.json, tauri.conf.json, Cargo.toml, Cargo.lock's
 lcx-terminal block, Launch.tsx LCXOS_VERSION), and the download page says what the file is.
 
-THE DMG SIZE GUARD: the DMG is DMG_BYTES bytes (DMG_MB MB); LCXOS_DMG_MB OLD_MB → DMG_MB and the history line records the bytes; the
+THE DMG SIZE GUARD: the DMG is 4,463,630 bytes (4.5 MB); LCXOS_DMG_MB stays 4.5 (the DMG grew 367 bytes; the tenth did not move) and the history line records the first build's 4_463_623 bytes — the count lives inside the file it counts, so the rebuilt DMG (4,463,630) is 7 bytes past it, as every release here has been; the
 desktop was REBUILT after the move so the page inside the app agrees with the file it describes (the P4 lesson).
 
 THE CHANNEL: latest.json on voyagernik123/lcx-terminal-releases carries version 0.5.1 and the minisign signature of the shipped .app.tar.gz;
@@ -15,6 +15,6 @@ CDN-verified after publish (latest.json read back from the channel: version 0.5.
 HOST NOTE: built with /Library/Developer/CommandLineTools first on PATH (Xcode 26.6 demands its licence through /usr/bin/{git,python3,cc};
 the CLT toolchain does not; the bundler calls xcrun only to notarize, which this release does not).
 
-gate: GATE_LINE
+gate: root ci-check on the release tree EXIT 0 — vitest stages: 1997 passed (1997); 373 passed (373); 3537 passed | 14 skipped (3551); 2825 passed (2825); 20 passed (20); shared→api→web emit builds green; web build 5.50s
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
