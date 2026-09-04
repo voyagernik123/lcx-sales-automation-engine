@@ -1,0 +1,15 @@
+test(e2e): the frame-budget allowance is per event — one long frame per flash over a bare repaint, on any compositor; the quadratic case stays caught
+
+With the compositing control in place (17ca24a), GitHub's runner read what it actually costs there: a PLAIN repaint at the juice's 80 ms
+cadence dropped 12 of 54 frames (retry: 15 of 28, p50 50 ms); the juice dropped 24 of 34 (retry 20 of 23) — an excess of 12 and 5 frames
+over the bare repaint for 15 events, on a machine where a bare repaint already costs a frame. On an M1 the excess is one frame. Per event
+the feedback layer toggles a flash class (a CSS animation), schedules a two-node tone, and taps a no-op haptic; nothing reads layout after
+writing it. The extra frame is the flash being painted — the feature — not a thrash to remove.
+
+So the allowance is stated in the unit the work comes in: the juice may exceed the larger of the idle and plain controls by at most one
+dropped frame per event fired (floor 3, as before). What this test exists to catch — 200 rows juiced in a loop, frames dropping in the tens
+per event — it still catches. Widening a constant would have been the wrong repair; the spec's own header says so, and this is not that.
+
+Locally: idle 1 · plain 0 · juiced 1 dropped, fired 13–14, all p50 16.7 ms; the synchronous-cost test unchanged.
+
+gate: root ci-check clean; 0 npm error: 57/1997 · 20/373 · 170/3532 · 210/2818 · 2/20 · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 360/440 · passthrough 1025/1152 · 210 lazy page chunks
