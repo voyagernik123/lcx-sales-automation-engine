@@ -1,0 +1,19 @@
+test(e2e): the frame-budget comparison gains a compositing control — a plain repaint at the juice's cadence, so a slow runner is measured as itself
+
+HEAD's Playwright job was red on framebudget.spec.ts with a CLEAN idle control: 70 idle frames, 2 dropped — then 29 of 36 juiced frames
+dropped at 33 ms each, three runs of six on identical application bytes (e343156 ×2, 61cfd2d; green on 36c69aa, 8e3c0b8, 49157db). On an
+M1, headless Chromium — SwiftShader as well — drops 1 of 61 in the same window. The idle control proves the machine is quiet; it cannot
+say what a REPAINT costs there, and on GitHub's runners a repaint is what costs.
+
+THE CONTROL: the same target, repainted at the same 80 ms cadence by a plain CSS outline toggle with no feedback layer at all, sampled
+for the same 1.2 s. The assertion now compares juiced drops against the LARGER of the idle and plain controls (+3, as before). If the plain
+repaint drops frames at the juiced rate, the juice adds nothing and the runner's compositor was what failed; if plain stays clean and
+juiced drops, the juice is the cost and the test fails for the right reason.
+
+NOT DONE, and reverted within the minute: skipping the comparison on a "software renderer". Local headless Chromium reports SwiftShader
+and passes — speed is the discriminator, not software — and that skip would have silenced the test everywhere it runs.
+
+Locally: idle 1 · plain 0 · juiced 1 dropped (45 / 72 / 62 frames, all p50 16.7 ms); the synchronous-cost test unchanged (0.026 ms per
+element against a 0.5 ms budget).
+
+gate: root ci-check clean; 0 npm error: 57/1997 · 20/373 · 170/3532 · 210/2818 · 2/20 · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 360/440 · passthrough 1025/1152 · 210 lazy page chunks

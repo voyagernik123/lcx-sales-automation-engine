@@ -156,6 +156,18 @@ test.describe('frame budget with the juice on', () => {
       };
 
       const idle = await sample(1_200);
+      // THE COMPOSITING CONTROL (P9, 2026-09-04). On GitHub's runners this comparison failed three runs out of six on identical
+      // code with a CLEAN idle control: 70 idle frames, 2 dropped — then 29 of 36 juiced frames dropped at 33 ms each. On an M1 the
+      // same window drops 1 of 61. The idle control says the machine is quiet; it cannot say what a REPAINT costs there. So: the same
+      // target, repainted at the same 80 ms cadence by a plain CSS toggle with no feedback layer at all. If the plain repaint drops
+      // frames at the juiced rate, the juice adds nothing and the runner's compositor is what was measured; if plain stays clean and
+      // juiced drops, the juice is the cost. The assertion below compares against the larger of the two controls.
+      let plainTicks = 0;
+      const el = target as HTMLElement;
+      const plainTimer = setInterval(() => { plainTicks++; el.style.outline = plainTicks % 2 ? '2px solid rgba(44,107,255,0.6)' : ''; }, 80);
+      const plain = await sample(1_200);
+      clearInterval(plainTimer);
+      el.style.outline = '';
       feel.setFeelPref('sound', true);
       let fired = 0;
       const firing = setInterval(() => {
@@ -169,12 +181,16 @@ test.describe('frame budget with the juice on', () => {
 
       return {
         idleN: idle.length,
+        plainN: plain.length,
         juicedN: juiced.length,
         idleDropped: dropped(idle),
+        plainDropped: dropped(plain),
         juicedDropped: dropped(juiced),
         idleP50: p50(idle),
+        plainP50: p50(plain),
         juicedP50: p50(juiced),
         fired,
+        plainTicks,
       };
     });
 
@@ -223,12 +239,12 @@ test.describe('frame budget with the juice on', () => {
     test.skip(result.fired < 5, `only ${result.fired} juice events fired — window too starved to conclude`);
     expect(
       result.juicedDropped,
-      `dropped ${result.juicedDropped} frames with the juice on vs ${result.idleDropped} idle ` +
+      `dropped ${result.juicedDropped} frames with the juice on vs ${result.idleDropped} idle and ${result.plainDropped} on a plain repaint at the same cadence ` +
         `(${result.juicedN} frames sampled, ${result.fired} events). Compared against a control ` +
         'because a raw 16.7ms interval is a healthy frame, not a budget breach.',
       // Tolerance rather than equality: the environment is shared and noisy, and a
       // test that fails on one stray long frame gets retried until green, which is
       // worse than no test.
-    ).toBeLessThanOrEqual(result.idleDropped + 3);
+    ).toBeLessThanOrEqual(Math.max(result.idleDropped, result.plainDropped) + 3);
   });
 });
