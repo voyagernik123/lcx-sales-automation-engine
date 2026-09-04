@@ -61,7 +61,7 @@ const ForgeBackdrop = lazy(() =>
  * `apps/desktop/src-tauri/tauri.conf.json`, so a release that forgets this line
  * turns the suite red instead of leaving a stale number on the front page.
  */
-export const LCXOS_VERSION = '0.4.0';
+export const LCXOS_VERSION = '0.5.0';
 /**
  * The download's size in MB, one decimal place.
  *
@@ -72,6 +72,8 @@ export const LCXOS_VERSION = '0.4.0';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  *
+ * 0.5.0: 4_463_263 bytes = 4.5 MB — THE PRODUCTION P5–P9: the GPU charts, the machined Forge (forge.glb rides inside the app: +0.16 MB), the
+ *        arrival on the stage, the hardening pass; measured from the artefact the publisher holds, as every line here is.
  * 0.4.0: 4_371_024 bytes = 4.4 MB (the published artefact; three builds of this tree read 4_370_551, 4_370_514 and
  *        4_371_024 — tens of bytes move between builds, the tenth of a megabyte does not) — THE PRODUCTION P0–P4: the stage's scene module, the one present path (pipeline +
  *        FXAA), the two studio environment maps and their sidecars, the hero fixtures' code paths. Measured from the
@@ -91,7 +93,7 @@ export const LCXOS_VERSION = '0.4.0';
  * download dialog shows. 4_070_285 / 1e6 = 4.1; the same bytes are 3.9 MiB, and picking
  * the other unit here would make the guard fail forever with both sides "correct".
  */
-export const LCXOS_DMG_MB = 4.4;
+export const LCXOS_DMG_MB = 4.5;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub

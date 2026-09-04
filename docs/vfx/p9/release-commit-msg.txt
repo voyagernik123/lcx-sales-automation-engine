@@ -1,17 +1,17 @@
 release(desktop): v0.5.0 — THE PRODUCTION P9: the desk at the same build as the web
 
-THE PRODUCTION (VFX_PRODUCTION_PLAN.md) P9, the desktop half. The app bundles the P9 web build ({{WEB_SHA}}); the six version homes read
+THE PRODUCTION (VFX_PRODUCTION_PLAN.md) P9, the desktop half. The app bundles the P9 web build (8e3c0b8); the six version homes read
 0.5.0 (apps/desktop/package.json, apps/web/package.json, tauri.conf.json, Cargo.toml, Cargo.lock's lcx-terminal block, Launch.tsx
 LCXOS_VERSION), and the download page says what the file is.
 
-THE DMG SIZE GUARD: the DMG is {{DMG_BYTES}} bytes ({{DMG_MB}} MB); LCXOS_DMG_MB moved {{OLD_MB}} → {{DMG_MB}} and the history line records the bytes;
+THE DMG SIZE GUARD: the DMG is 4,462,488 bytes (4.5 MB); LCXOS_DMG_MB moved 4.4 → 4.5 and the history line records the bytes;
 the desktop was REBUILT after the move so the page inside the app agrees with the file it describes (the P4 lesson).
 
 THE CHANNEL: latest.json on voyagernik123/lcx-terminal-releases carries version 0.5.0 and the minisign signature of the shipped
-.app.tar.gz; CDN-verified after publish ({{CDN}}). The updater key has no passphrase; the app verifies against the committed pubkey.
+.app.tar.gz; CDN-verified after publish (latest.json read back from the channel: version 0.5.0, signature identical to the local .app.tar.gz.sig, url …/releases/download/v0.5.0/LCXOS_0.5.0_aarch64.app.tar.gz). The updater key has no passphrase; the app verifies against the committed pubkey.
 
 HOST NOTE: built with /Library/Developer/CommandLineTools first on PATH — Xcode 26.6 (updated 2026-09-04 15:41) demands its licence
 through /usr/bin/{git,python3,cc}; the CLT toolchain (Apple clang 21, cargo 1.97) does not, and the bundler calls xcrun only to notarize,
 which this release does not.
 
-gate: {{GATE}}
+gate: root ci-check clean on the release tree; 0 npm error: 57/1997 · 20/373 · 170/3532 · 210/2818 · 2/20 · web build 5.27s · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 360/440 · passthrough 1025/1152 · 210 lazy page chunks
