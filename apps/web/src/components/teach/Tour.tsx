@@ -99,52 +99,36 @@ export function Tour({
       aria-label="First run"
       /* Above the manual's z-[120], which looks wrong and is not: the moment the
        * manual is open is the moment this panel is telling the operator how to come
-       * back out of it. Centred under the top bar, because every step it teaches (⌘K, `?`,
-       * the workspace switcher) lives in that bar — and because bottom-left was found in
-       * production sitting on top of the sidebar's Field Notes card. */
-      className="fixed top-14 left-1/2 z-[130] w-[19rem] -translate-x-1/2 rounded-lg border border-line bg-card p-3 shadow-overlay"
+       * back out of it. A ONE-LINE STRIP centred above the status bar: every other
+       * position was found covering something on production — bottom-left sat on the
+       * sidebar's Field Notes card, under the top bar it sat on the page title. The
+       * strip covers the bottom edge of the scroll area only; the toast stack
+       * (bottom-right) and the hint layer's mode banner (bottom-3 left-3) stay clear. */
+      className="fixed bottom-8 left-1/2 z-[130] flex max-w-[min(44rem,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-lg border border-line bg-card px-3 py-1.5 shadow-overlay"
     >
-      <div className="flex items-start gap-2">
-        <h2 className="text-micro font-bold uppercase tracking-wider text-grey">
-          {finished ? 'You are set up' : 'First run'}
-        </h2>
-        <button
-          onClick={() => {
-            if (!finished) onSettle('skipped');
-            setClosed(true);
-          }}
-          className="t-hover focus-ring ml-auto flex items-center gap-1 rounded px-1 text-micro text-grey hover:text-navy"
-        >
-          {finished ? 'Done' : 'Skip'}
-          <X size={12} />
-        </button>
-      </div>
+      <h2 className="shrink-0 text-micro font-bold uppercase tracking-wider text-grey">
+        {finished ? 'You are set up' : 'First run'}
+      </h2>
 
       {/* Announced, because the step changes without anything taking focus — a
         * keyboard operator whose focus is out on the page would otherwise never hear
         * that the panel moved on. */}
-      <div aria-live="polite" className="mt-2">
+      <div aria-live="polite" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         {finished || !step ? (
-          <p className="text-body leading-relaxed text-navy">
+          <p className="text-label text-navy">
             That is the whole grammar. <Chip>⌘K</Chip> and <Chip>?</Chip> are the two you will use
-            all day; the rest is in the manual, generated from what this build can actually do.
+            all day; the rest is in the manual.
           </p>
         ) : (
           <>
-            <p className="text-body leading-relaxed text-navy">{step.prompt}</p>
-            <p className="mt-2 flex items-center gap-1">
+            <p className="text-label text-navy">{step.prompt}</p>
+            <p className="flex items-center gap-1">
               {step.keys.map((k) => (
                 <Chip key={k}>{k}</Chip>
               ))}
             </p>
-            {/* The only feedback in the whole feature, and it is the reason there is
-              * no Next button: the operator gets confirmation for the thing they did,
-              * plus the one key that gets them back to where the next step can work.
-              * `g` and `f` are dead while anything is on the dismiss stack, so this is
-              * not a courtesy — it is the difference between the next step working and
-              * appearing broken. */}
             {progress.latched && (
-              <p className="mt-2 flex items-center gap-1.5 text-micro text-grey">
+              <p className="flex items-center gap-1.5 text-micro text-grey">
                 <Check size={12} className="text-cyan-600 dark:text-cyan-400" />
                 Done — <Chip>Esc</Chip> to come back
               </p>
@@ -152,6 +136,17 @@ export function Tour({
           </>
         )}
       </div>
+
+      <button
+        onClick={() => {
+          if (!finished) onSettle('skipped');
+          setClosed(true);
+        }}
+        className="t-hover focus-ring ml-auto flex shrink-0 items-center gap-1 rounded px-1 text-micro text-grey hover:text-navy"
+      >
+        {finished ? 'Done' : 'Skip'}
+        <X size={12} />
+      </button>
     </section>
   );
 }

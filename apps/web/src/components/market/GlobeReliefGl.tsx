@@ -891,11 +891,15 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
           flip: p.sx > cssW - LABEL_MAX_PX, top: 0,
         });
       }
+      /* A plate's height is its WRAPPED line count: a 260 px plate at 10 px mono holds ~39 glyphs a line, and
+         "geographic centre of the EU-27, near Gadheim, Germany" is two lines, not one. */
+      const wrappedLines = (l: ScreenLabel): number =>
+        Math.max(0, Math.ceil(l.title.length / 39) - 1) + l.lines.reduce((n, t) => n + Math.max(1, Math.ceil(t.length / 39)), 0);
       /* THE PLATES SETTLE AGAINST EACH OTHER AND AGAINST THE HEADLINE. Found on production at 1440 px: the EU and
          US plates covered each other and ran into "LISTING GEOGRAPHY". The headline band is reserved as a fixed
          rectangle (its own two lines plus the four-line note the frame shows at desk width). */
       const tops = settleLabels(
-        labels.map((l) => ({ key: l.key, sx: l.sx, sy: l.sy, flip: l.flip, lines: l.lines.length })),
+        labels.map((l) => ({ key: l.key, sx: l.sx, sy: l.sy, flip: l.flip, lines: wrappedLines(l) })),
         { widthPx: LABEL_MAX_PX, reserved: [{ left: 14, top: 12, right: 14 + cssW * 0.62, bottom: 90 }], frameH: cssH },
       );
       labels.forEach((l, i) => { l.top = tops[i]!; });
@@ -1043,10 +1047,11 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
               <div
                 key={l.key}
                 style={{
-                  position: 'absolute', left: l.sx, top: l.top,
-                  /* Y is settled in the plan (`settleLabels`): above the anchor when that is clear, otherwise below
-                     or further down. The X term hangs it left of the anchor near the right edge instead of clipping. */
-                  transform: l.flip ? 'translate(calc(-100% - 10px), 0)' : 'translate(10px, 0)',
+                  position: 'absolute', top: l.top,
+                  /* Y is settled in the plan (`settleLabels`). X: a plate near the right edge is anchored by its RIGHT edge — `left`
+                     plus a -100% translate lays the box out in the sliver right of the anchor FIRST, and on production that sliver
+                     was one word wide, so the US plate came out as a 30 px column. */
+                  ...(l.flip ? { right: plan.cssW - l.sx + 10 } : { left: l.sx + 10 }),
                   background: LABEL_BG, border: '1px solid rgba(127,178,255,.30)',
                   padding: '5px 7px', maxWidth: LABEL_MAX_PX,
                 }}

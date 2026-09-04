@@ -19,7 +19,7 @@
  *                                      attribute on <body> is — so 'unsafe-inline' stays for styles)
  *   img-src     'self' data: blob:     inline SVG data URIs and canvas-derived images
  *   font-src    'self'                 the self-hosted Inter and JetBrains Mono files
- *   connect-src 'self' + API origin    fetch and EventSource to the API (NotificationBell's stream)
+ *   connect-src 'self' + API origin    fetch and EventSource to the API (NotificationBell's stream) + Cloudflare's RUM endpoint (the injected beacon reports to it)
  *   worker-src  'self' blob:           none today; harmless if a bundler emits one
  *   object-src  'none' · base-uri 'self' · form-action 'self' · frame-ancestors 'none'
  *
@@ -65,7 +65,7 @@ const csp = [
   `style-src 'self' 'unsafe-inline'`,
   `img-src 'self' data: blob:`,
   `font-src 'self'`,
-  `connect-src 'self' ${api}`,
+  `connect-src 'self' ${api} https://cloudflareinsights.com`,
   `worker-src 'self' blob:`,
   `object-src 'none'`,
   `base-uri 'self'`,
