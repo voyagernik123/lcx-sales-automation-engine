@@ -1,0 +1,13 @@
+docs(ledger): the CI outcomes of the release and closing commits — main's HEAD green on both jobs; runner variance recorded, not chased
+
+e343156 (the v0.5.0 release commit: version files and the download page's constants) ran red on its Playwright job twice — a runner producing
+two idle frames at p50 1999.9 ms the first time, juiced frames at 50 ms the second, four visibility timeouts in specs untouched by the commit;
+the framebudget probe was SKIPPED on both by the guards P8 added, exactly as designed. 49157db, the closing commit, carries the identical
+application bytes (it differs by docs/vfx only) and is green on both jobs at the first attempt, as was 8e3c0b8 before it. No third rerun of a
+superseded commit: the property that matters — main's HEAD green with this code — holds, and the pattern (three Playwright reds this week,
+each on a runner at 1–2 s per frame, each passing on a healthy runner) is on record for the owner as CI-runner variance.
+
+THE PRODUCTION is closed: P0–P9 live and verified on both surfaces, desktop v0.5.0 published, CDN-verified and installed; the arc, the
+scorecard and the walkthrough are in docs/vfx. What remains is the owner's list in the ledger's NEXT ACTION.
+
+gate: root ci-check clean; 0 npm error: 57/1997 · 20/373 · 170/3532 · 210/2818 · 2/20 · REAL initial 1313KB (JS 762/850 · CSS 117/140 · fonts 434/440) · largest chunk 360/440 · passthrough 1025/1152 · 210 lazy page chunks
