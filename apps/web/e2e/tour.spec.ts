@@ -205,7 +205,7 @@ test.describe('the first run', () => {
     // nothing would teach a restricted operator's app to whoever is sitting there.
     await takeSeat(page);
     await page.goto('/');
-    await expect(page.getByText(/NOT LEGAL ADVICE/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/INTERNAL · NOT LEGAL ADVICE/).first()).toBeVisible({ timeout: 15_000 }); // the status bar's own string, not the rotating Field Notes tip — see e2e/seat.ts
     await expect(page.locator(panel)).toBeHidden();
 
     // Nothing was recorded as settled, so the first run survives the outage.

@@ -4,24 +4,24 @@
   "display": "sRGB",
   "encoded": {
     "1x": {
-      "bytes": 21540,
-      "path": "../../../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/env/env-light.webp",
-      "sha256_16": "37eab419a8807168",
+      "bytes": 7120,
+      "path": "../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/env2/env-light.webp",
+      "sha256_16": "f27d50212419c1bc",
+      "size": [
+        1024,
+        512
+      ]
+    },
+    "2x": {
+      "bytes": 20940,
+      "path": "../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/env2/env-light@2x.webp",
+      "sha256_16": "c9adab648f41e8be",
       "size": [
         2048,
         1024
       ]
     },
-    "2x": {
-      "bytes": 69246,
-      "path": "../../../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/env/env-light@2x.webp",
-      "sha256_16": "d6548701ef304f0d",
-      "size": [
-        4096,
-        2048
-      ]
-    },
-    "budgetKb": 900,
+    "budgetKb": 200,
     "encoder": "PIL 11.3.0 libwebp",
     "quality": 95,
     "withinBudget": true

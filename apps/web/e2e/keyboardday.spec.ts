@@ -591,7 +591,7 @@ test('flow 1/5 — triage the desk: navigate, walk the queue, peek, disqualify',
   // digit. ⌘1-9 are never delivered to a webview (src/lib/navGrammar.ts measured zero
   // keydowns for a real ⌘2), so this prefix grammar is the only workspace jump there is.
   await page.goto('/');
-  await expect(page.getByText(/NOT LEGAL ADVICE/i).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/INTERNAL · NOT LEGAL ADVICE/).first()).toBeVisible({ timeout: 15_000 }); // the status bar's own string, not the rotating Field Notes tip — see e2e/seat.ts
   await keys.press('g');
   await keys.press('2');
   await expect(page).toHaveURL(/\/bd-pipeline$/);
@@ -1180,7 +1180,7 @@ test('⌘K reachability, as this stubbed harness measures it', async ({ page }) 
   })));
 
   await page.goto('/');
-  await expect(page.getByText(/NOT LEGAL ADVICE/i).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/INTERNAL · NOT LEGAL ADVICE/).first()).toBeVisible({ timeout: 15_000 }); // the status bar's own string, not the rotating Field Notes tip — see e2e/seat.ts
 
   const reached = new Set<string>();
   for (const [i, type] of inspectors.entries()) {
@@ -1290,7 +1290,7 @@ test('the guard itself: a positive control — one real click must be detected',
   test.fail(true, 'this test touches the trackpad on purpose; the guard has to catch it');
   const keys = await seat(page);
   await page.goto('/');
-  await expect(page.getByText(/NOT LEGAL ADVICE/i).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/INTERNAL · NOT LEGAL ADVICE/).first()).toBeVisible({ timeout: 15_000 }); // the status bar's own string, not the rotating Field Notes tip — see e2e/seat.ts
   await keys.enterMain();
 
   expect(realMouseClick, 'the real Mouse.click was never captured, so this control is inert').toBeTruthy();

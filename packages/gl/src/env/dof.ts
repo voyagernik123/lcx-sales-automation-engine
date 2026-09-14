@@ -60,7 +60,7 @@ uniform float uFocusDistance;
 uniform float uAperture;
 uniform float uMaxCoc;
 // A BAND of depth around the focus that stays perfectly sharp, in reciprocal-distance units (the same units
-// cocAt works in). Without it the subject's OWN depth — a disc two units across at ten — put its near and far
+// cocAt works in). Without it the subject's OWN depth - a disc two units across at ten - put its near and far
 // edges outside the 0.0015 sharp threshold and the object was soft everywhere (production, 2026-09-14). The band is
 // the reciprocal spread of the subject's radius about the focus; only what lies beyond the subject blurs.
 uniform float uFocusBand;

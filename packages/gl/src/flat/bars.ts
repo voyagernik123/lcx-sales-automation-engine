@@ -105,7 +105,7 @@ void main(){
      This was fwidth(d), which is the obvious form and is wrong: sdRoundRect contains
      max(q, 0.0) and a length(), so its derivative is DISCONTINUOUS along the diagonal
      running out of each corner. fwidth spikes on that seam, the smoothstep below fires
-     deep inside the shape, and a small dark speck appears on the diagonal — visible on
+     deep inside the shape, and a small dark speck appears on the diagonal - visible on
      two of six bars and on nothing else, which is exactly the sort of artifact that gets
      blamed on the data.
      p is linear in vUV, so fwidth(p) is constant across the primitive and the feather is
@@ -115,13 +115,13 @@ void main(){
   if (mask <= 0.001) discard;
 
   /* MODELLING: 0 at the lit edge, 1 at the far edge. Vertical bars are lit from the TOP,
-     horizontal bars from the LEFT — the direction a reader's eye already assumes.
+     horizontal bars from the LEFT - the direction a reader's eye already assumes.
 
      uYSign carries the projection's y direction, exactly as the contact shader already did.
      This one hardcoded 1.0 - vUV.y, so a chart flipping y to match an SVG viewBox got its
      columns lit from BELOW: gradient darkest at the top, lit edge on the baseline. It never
      showed on horizontal bars, which read vUV.x, which is why the first swap did not catch
-     it — and every vertical chart inherits the same batch, so it belongs here rather than
+     it - and every vertical chart inherits the same batch, so it belongs here rather than
      forked into one lane. */
   float vy = uYSign > 0.0 ? (1.0 - vUV.y) : vUV.y;
   float t = uHorizontal > 0.5 ? vUV.x : vy;
@@ -150,7 +150,7 @@ void main(){
   /* uYSign IS THE PROJECTION'S Y DIRECTION, not an assumption.
      This shader was written for a y-up plot and hard-coded "below" as y minus drop. A chart
      borrowing its host SVG's viewBox counts y DOWNWARD, so the shadow was cast ABOVE each
-     bar — mostly hidden behind it, and visible as a dark speck poking through the rounded
+     bar - mostly hidden behind it, and visible as a dark speck poking through the rounded
      corner. A shadow that does not know which way is down is not a shadow. */
   float base = uYSign > 0.0 ? rect.y : rect.w;          // the edge resting on the plate
   float away = -uYSign;                                  // away from the light, onto the plate
@@ -174,7 +174,7 @@ uniform vec3 uColour; uniform float uStrength;
 out vec4 frag;
 uniform float uContactEdge;
 void main(){
-  // Softest at the far edge, densest where the bar meets the plate — which is where a real
+  // Softest at the far edge, densest where the bar meets the plate - which is where a real
   // contact shadow is densest, and the reason it reads as contact at all. uContactEdge
   // says which end of the quad that is, so the gradient flips with the axis too.
   vec2 c = (vUV - vec2(0.5, uContactEdge));

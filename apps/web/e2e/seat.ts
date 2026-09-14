@@ -112,5 +112,9 @@ export async function goToDesk(page: Page, path = '/'): Promise<void> {
   await page.goto(path);
   // `.first()` because the disclaimer also appears in print headers on some
   // routes, and a strict-mode violation here would look like a shell failure.
-  await expect(page.getByText(/NOT LEGAL ADVICE/i).first()).toBeVisible({ timeout: 15_000 });
+  // The STATUS BAR's own string. A bare /NOT LEGAL ADVICE/i also matched the sidebar's rotating Field Notes tip ("Not
+  // legal advice — but pretty good business advice"), which paints BEFORE the shell's keyboard layer mounts — so
+  // whenever that tip was up, this returned early and the spec's one keypress landed on nothing (CI 4e24aa1,
+  // three desk specs red on every retry; green an hour earlier when a different tip was showing).
+  await expect(page.getByText(/INTERNAL · NOT LEGAL ADVICE/).first()).toBeVisible({ timeout: 15_000 });
 }

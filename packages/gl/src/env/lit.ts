@@ -587,7 +587,7 @@ void main(){
   float Ess = dfg.x + dfg.y;
   vec3 specWeight = max(vec3(0.0), f0 * dfg.x + dfg.y);
   vec3 msComp = 1.0 + f0 * (1.0 / max(1e-3, Ess) - 1.0);
-  // With a real environment bound, irradiance is a SOFT sample (LOD 5.5 of a 1024×512 map ≈ a 32×16 blur) and the
+  // With a real environment bound, irradiance is a SOFT sample (LOD 5.5 of a 1024x512 map ~ a 32x16 blur) and the
   // reflection sharpens with smoothness (LOD by roughness). The procedural sky ignores the LOD.
   vec3 envDiffuse = skyColourLod(N, 5.5) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);
   envDiffuse = mix(envDiffuse, skyColourLod(N, 5.5) * base * (1.0 - specWeight) * (1.0 - metal), inlay);
