@@ -1,29 +1,29 @@
 {
   "blender": "5.2.0 LTS",
-  "bytes": 1573823,
+  "bytes": 6206824,
   "display": "sRGB",
   "encoded": {
     "1x": {
-      "bytes": 4774,
-      "path": "apps/web/public/objects/env-dark.webp",
-      "sha256_16": "fbdcb2b06dac7b80",
-      "size": [
-        1024,
-        512
-      ]
-    },
-    "2x": {
-      "bytes": 12592,
-      "path": "apps/web/public/objects/env-dark@2x.webp",
-      "sha256_16": "ed67295cbba42895",
+      "bytes": 27038,
+      "path": "../../../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/env/env-dark.webp",
+      "sha256_16": "b53dd53e70bacb6a",
       "size": [
         2048,
         1024
       ]
     },
-    "budgetKb": 60,
+    "2x": {
+      "bytes": 82050,
+      "path": "../../../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/env/env-dark@2x.webp",
+      "sha256_16": "bac9dc4f54168aec",
+      "size": [
+        4096,
+        2048
+      ]
+    },
+    "budgetKb": 900,
     "encoder": "PIL 11.3.0 libwebp",
-    "quality": 86,
+    "quality": 95,
     "withinBudget": true
   },
   "engine": "CYCLES",
@@ -33,12 +33,12 @@
   "look": "None",
   "purpose": "environment",
   "resolution": [
-    2048,
-    1024
+    4096,
+    2048
   ],
-  "samples": 64,
+  "samples": 128,
   "scale": 2.0,
-  "sha256_16": "f4cd7c3b80144c72",
+  "sha256_16": "b5a5c88498b01dfe",
   "source": "(built in memory: scripts/blender/env_studio.py)",
   "theme": "dark",
   "transform": "Standard",

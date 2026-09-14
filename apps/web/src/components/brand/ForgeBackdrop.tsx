@@ -79,6 +79,7 @@ interface GlMod {
   readonly createSkyBackdrop: typeof import('@lcx/gl/env/sky.js')['createSkyBackdrop'];
   readonly createAmbientOcclusion: typeof import('@lcx/gl/env/ao.js')['createAmbientOcclusion'];
   readonly createDepthOfField: typeof import('@lcx/gl/env/dof.js')['createDepthOfField'];
+  readonly createAntialias: typeof import('@lcx/gl/look/aa.js')['createAntialias'];
   readonly eyeOf: typeof import('@lcx/gl/env/camera.js')['eyeOf'];
   readonly viewProjection: typeof import('@lcx/gl/env/camera.js')['viewProjection'];
   readonly lightViewProjection: typeof import('@lcx/gl/env/camera.js')['lightViewProjection'];
@@ -351,7 +352,8 @@ export function ForgeBackdrop({ intensity = 1, layer = 'behind' }: ForgeBackdrop
       import('@lcx/gl/env/camera.js'),
       import('@lcx/gl/look/precompensate.js'),
       import('@lcx/gl/env/gltf.js'),
-    ]).then(([stg, mth, col, tm, q, mesh, lit, t3d, sky, ao, dof, cam, pre, gltf]) => {
+      import('@lcx/gl/look/aa.js'),
+    ]).then(([stg, mth, col, tm, q, mesh, lit, t3d, sky, ao, dof, cam, pre, gltf, aa]) => {
       if (!alive) return;
       start({
         createStage: stg.createStage, isStage: stg.isStage,
@@ -365,6 +367,7 @@ export function ForgeBackdrop({ intensity = 1, layer = 'behind' }: ForgeBackdrop
         createSkyBackdrop: sky.createSkyBackdrop,
         createAmbientOcclusion: ao.createAmbientOcclusion,
         createDepthOfField: dof.createDepthOfField,
+        createAntialias: aa.createAntialias,
         eyeOf: cam.eyeOf, viewProjection: cam.viewProjection,
         lightViewProjection: cam.lightViewProjection,
         boundsRadius: cam.boundsRadius, boundsCentre: cam.boundsCentre,
@@ -463,7 +466,19 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       /* NOT ALLOCATED AT ALL when the tier declines them. DOF is the ladder's first drop and AO its second, in
          E0's measured cost order: the lens is ~6.4 ms of an 11.328 ms frame. */
       const ao = Q.ao ? gl3.createAmbientOcclusion(stage, W, H) : null;
-      const dof = Q.dof ? gl3.createDepthOfField(stage, W, H) : null;
+      /* NO LENS ON THE FORGE. Measured 2026-09-14 at device resolution (1440×900 @2, crops at 1:1): with the depth-of-field
+         pass on, the mark's edges, the ring and the disc's silhouette were soft over several device pixels even with a
+         focus band wide enough to hold the whole plinth; with it off, every edge was crisp. What the lens bought here
+         was a slightly softer floor, and what it cost was the object. The pass stays available to other surfaces
+         (`Q.dof`); this one declines it. `FORGE_LENS` is the one switch to turn it back on for an experiment. */
+      const FORGE_LENS = false;
+      const dof = Q.dof ? (FORGE_LENS ? gl3.createDepthOfField(stage, W, H) : null) : null;
+      /* ANTI-ALIASING, WHICH THIS SURFACE NEVER HAD. The 3D target is a plain texture framebuffer (no MSAA — DOF needs
+         its depth as a texture) and the canvas was created without `antialias`, so every silhouette and every fine
+         highlight on the ring aliased at device resolution; on the owner's screen it read as "amateurish". The present
+         now lands in an LDR target and the L2 FXAA pass (the same one every flat surface uses) draws that to the canvas. */
+      const ldr = gl3.createTarget3D(stage, W, H);
+      const aa = gl3.createAntialias(stage);
 
       /*
        * EVERY RESOURCE IS NARROWED INDIVIDUALLY, not checked in a loop.
@@ -481,6 +496,8 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       if ('kind' in sky) return bail(sky.reason);
       if (ao && 'kind' in ao) return bail(ao.reason);
       if (dof && 'kind' in dof) return bail(dof.reason);
+      if ('kind' in ldr) return bail(ldr.reason);
+      if ('kind' in aa) return bail(aa.reason);
       const P = present, R = lit, T = target, S = shadow, K = sky, A = ao, D = dof;
 
       const discGeo = gl3.cylinder(0.92, 0.16, 96);
@@ -633,19 +650,29 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         let resolved = T.texture;
         if (D) {
           const focus = Math.hypot(eye[0], eye[1] - DISC_Y, eye[2]);
+          /* THE SUBJECT STAYS SHARP. Aperture 7 with maxCoc 0.009 put the disc's own near and far edges 10–20 px
+             out of focus at device resolution — the whole object read soft (production, 2026-09-14). The band keeps
+             everything within the plinth's radius of the focus distance perfectly sharp; only the room beyond blurs,
+             which is the one thing this lens was ever for. */
+          const SUBJECT_R = 2.0;
           D.apply({
             scene: T.texture, depthTexture: T.depthTexture, near, far,
-            fovDeg: view.fovDeg, aspect: W / H, focusDistance: focus, aperture: 7, maxCoc: 0.009,
+            fovDeg: view.fovDeg, aspect: W / H, focusDistance: focus, aperture: 4, maxCoc: 0.006,
+            focusBand: 1 / Math.max(0.5, focus - SUBJECT_R) - 1 / focus,
           });
           resolved = D.texture;
         }
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        /* Present (tone map + encode) into the LDR target, then FXAA from there to the canvas. */
+        ldr.bind();
         gl.viewport(0, 0, W, H);
         gl.disable(gl.DEPTH_TEST);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, resolved);
         stage.blit(P, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, W, H);
+        aa.apply(ldr.texture, W, H);
         /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted.
            This file was one of the two that never did it, so the app sweep could reach `/select`, watch this
            surface draw, and still report "0 of 1 canvases" for the tier it drew at.

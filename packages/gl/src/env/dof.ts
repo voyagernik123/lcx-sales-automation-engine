@@ -59,12 +59,17 @@ uniform vec2 uTexel;
 uniform float uFocusDistance;
 uniform float uAperture;
 uniform float uMaxCoc;
+// A BAND of depth around the focus that stays perfectly sharp, in reciprocal-distance units (the same units
+// cocAt works in). Without it the subject's OWN depth — a disc two units across at ten — put its near and far
+// edges outside the 0.0015 sharp threshold and the object was soft everywhere (production, 2026-09-14). The band is
+// the reciprocal spread of the subject's radius about the focus; only what lies beyond the subject blurs.
+uniform float uFocusBand;
 out vec4 frag;
 ${LINEAR_DEPTH_GLSL}
 
 float cocAt(vec2 uv) {
   float z = linearDepthAt(uv);
-  float c = abs(1.0 / max(0.05, uFocusDistance) - 1.0 / max(0.05, z)) * uAperture;
+  float c = max(0.0, abs(1.0 / max(0.05, uFocusDistance) - 1.0 / max(0.05, z)) - uFocusBand) * uAperture;
   return clamp(c, 0.0, uMaxCoc);
 }
 
@@ -123,6 +128,11 @@ export interface DepthOfField {
     readonly aperture?: number;
     /** Largest circle of confusion, in UV units. Bounds the cost. */
     readonly maxCoc?: number;
+    /**
+     * Reciprocal-distance half-width around `focusDistance` that stays sharp. For a subject of radius r at focus f,
+     * `1/(f - r) - 1/f` keeps the whole subject sharp and blurs only what lies beyond it. Default 0 (thin lens).
+     */
+    readonly focusBand?: number;
   }): void;
   resize(width: number, height: number): void;
   dispose(): void;
@@ -192,6 +202,7 @@ export function createDepthOfField(
       /* `uTanHalfFov` and `uAspect` are NOT set here any more. See the note on those two options. */
       gl.uniform2f(gl.getUniformLocation(prog, 'uTexel'), 1 / w, 1 / h);
       gl.uniform1f(gl.getUniformLocation(prog, 'uFocusDistance'), o.focusDistance);
+      gl.uniform1f(gl.getUniformLocation(prog, 'uFocusBand'), o.focusBand ?? 0);
       gl.uniform1f(gl.getUniformLocation(prog, 'uAperture'), o.aperture ?? 12);
       gl.uniform1f(gl.getUniformLocation(prog, 'uMaxCoc'), o.maxCoc ?? 0.012);
       stage.blit(prog);

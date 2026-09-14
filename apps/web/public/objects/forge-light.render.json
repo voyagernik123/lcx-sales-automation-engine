@@ -1,44 +1,51 @@
 {
-  "blender": "5.2.0 LTS",
-  "bytes": 1969446,
+  "arc": "done",
+  "bytes": 478481,
+  "capturedAt": "2026-09-14T14:18:29.081Z",
   "display": "sRGB",
   "encoded": {
     "1x": {
-      "bytes": 16712,
-      "path": "apps/web/public/objects/forge-light.webp",
-      "sha256_16": "4709447c0f049f31",
+      "bytes": 38398,
+      "path": "../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/still/forge-light.webp",
+      "sha256_16": "67e834ccbbf6275f",
       "size": [
         1200,
         720
       ]
     },
     "2x": {
-      "bytes": 40982,
-      "path": "apps/web/public/objects/forge-light@2x.webp",
-      "sha256_16": "bd4f890ae47ed382",
+      "bytes": 103178,
+      "path": "../../../../private/tmp/claude-501/-Users-nik-Downloads-usclaude-main/2a0bf58e-7212-4dc0-9892-abd773b0f861/scratchpad/still/forge-light@2x.webp",
+      "sha256_16": "dac9087f470a5caa",
       "size": [
         2400,
         1440
       ]
     },
-    "budgetKb": 120,
+    "budgetKb": 400,
     "encoder": "PIL 11.3.0 libwebp",
-    "quality": 86,
+    "quality": 95,
     "withinBudget": true
   },
-  "engine": "CYCLES",
-  "exposure": 0.0,
+  "engine": "webgl2-live (packages/gl: lit \u2192 present tone map \u2192 FXAA)",
+  "exposure": 0,
   "format": "PNG",
-  "gamma": 1.0,
+  "gamma": 1,
+  "layoutCss": [
+    1200,
+    720
+  ],
   "look": "None",
+  "renderer": "chromium headless, ANGLE/SwiftShader, deviceScaleFactor 2",
   "resolution": [
     2400,
     1440
   ],
-  "samples": 96,
-  "scale": 2.0,
-  "sha256_16": "f668eadfd824b742",
-  "source": "/Users/nik/Downloads/usclaude-main/scripts/blender/forge-light.blend",
+  "scale": 2,
+  "sha256_16": "32a7fcf349eb3314",
+  "source": "apps/web/scripts/capture-forge-still.mjs \u2014 the live WebGL Forge (ForgeBackdrop layer=\"cover\") captured on /lcxos",
+  "theme": "light",
   "transform": "Standard",
+  "transformNote": "the page's own tone map and sRGB encode \u2014 the reference the live object is drawn with",
   "transparent": false
 }

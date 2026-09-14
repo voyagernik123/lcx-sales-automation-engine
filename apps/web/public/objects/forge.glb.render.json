@@ -1,13 +1,13 @@
 {
-  "bytes": 160520,
+  "bytes": 422972,
   "theme": "dark",
   "viewTransform": "Standard",
   "blender": "5.2.0 LTS",
   "meshes": [
     {
       "name": "disc",
-      "vertices": 1940,
-      "triangles": 3680,
+      "vertices": 4374,
+      "triangles": 8546,
       "material": {
         "hex": "#8FA3C4",
         "roughness": 0.3,
@@ -17,8 +17,8 @@
     },
     {
       "name": "ring",
-      "vertices": 2048,
-      "triangles": 4096,
+      "vertices": 7680,
+      "triangles": 15360,
       "material": {
         "hex": "#2C6BFF",
         "roughness": 0.13,
@@ -28,8 +28,8 @@
     },
     {
       "name": "plinth",
-      "vertices": 1792,
-      "triangles": 3580,
+      "vertices": 4224,
+      "triangles": 8444,
       "material": {
         "hex": "#161D2E",
         "roughness": 0.52,
@@ -52,7 +52,7 @@
   "mark": {
     "source": "apps/web/public/lcx-mark.svg",
     "polygons": 4,
-    "depth": 0.012
+    "depth": 0.02
   },
   "scripts": [
     "scripts/blender/export_gltf.py"

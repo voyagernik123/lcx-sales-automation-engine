@@ -174,7 +174,10 @@ const MAX_PRELOADED_FONT_KB = 440;
 /* 1024 → 1152 on 2026-09-04 (THE PRODUCTION P6): what it bought is `public/objects/forge.glb`, the Forge as a machined
    mesh (146,716 B, 11,356 triangles, KHR_mesh_quantization) plus its .render.json sidecar — fetched lazily by the
    sign-in Forge after its first frame, never preloaded, so initial weight is unchanged. Measured before: 867 KB. */
-const MAX_PASSTHROUGH_KB = 1152;
+/* 1152 → 1792 on 2026-09-14: public/objects grew 302 → ~920 KB for the hyper-quality Forge (the mesh at 192/40/10 segments,
+   4K environment maps at quality 95, stills captured from the live renderer at 2400×1440) — see oneObject.test.ts for
+   the same numbers. All of it is lazy and behind the still; none of it is in the shell chunk. */
+const MAX_PASSTHROUGH_KB = 1792;
 
 /** How close to MAX_INITIAL_KB counts as worth saying out loud. */
 const INITIAL_HEADROOM_WARN_KB = 25;

@@ -28,7 +28,13 @@ const OBJECTS = join(WEB, 'public/objects');
 /* 300 → 448 on 2026-09-04 (THE PRODUCTION P6): the Forge as a machined mesh, `forge.glb` (160,520 B + sidecar), joined the
    stills and the environment maps; public/objects measured 302.3 KB with it. The passthrough budget rose 1024 → 1152 in
    check-bundle.mjs for the same bytes, so the objects' share of it is stated here as 448 (≈ 130 KB of headroom for P7). */
-const BUDGET_KB = 448;
+/* 448 → 1024 on 2026-09-14, by the owner's instruction ("hyper resolution and extreme quality"): forge.glb re-exported at
+   192 lathe segments, a 40-segment ring tube and a 10-segment bevel with the mark engraved 0.02 deep (160,520 → 422,972 B;
+   the 16-segment tube and 6-segment bevel were the facets visible at device resolution); the studio environment maps
+   rendered at 4096×2048 and encoded at quality 95 (12 → 82 KB @2x); the stills captured FROM THE LIVE RENDERER at
+   2400×1440, quality 95 (34 → 110 KB @2x), so the still and the object are one picture. The passthrough budget moves
+   with it in check-bundle.mjs. Everything here is lazy: the GLB and the live layer arrive after the still. */
+const BUDGET_KB = 1024;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const n of readdirSync(dir)) {

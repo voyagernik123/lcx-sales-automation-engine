@@ -177,13 +177,15 @@ def main():
     p.add_argument("--out", required=True); p.add_argument("--theme", default="dark", choices=["dark", "light"])
     p.add_argument("--bevel-segments", type=int, default=6); p.add_argument("--mark-depth", type=float, default=0.012)
     p.add_argument("--svg", default="apps/web/public/lcx-mark.svg"); p.add_argument("--report", action="store_true")
+    p.add_argument("--segments", type=int, default=128, help="lathe segments for disc/plinth/ring (128 shipped until 2026-09-14; 512 for a silhouette with no visible facets at 2000 px)")
+    p.add_argument("--ring-tube-segments", type=int, default=16)
     a = p.parse_args(argv)
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    disc = add_cylinder("disc", DISC[0], DISC[1], DISC[1] / 2, 128, bevel_width=0.018, bevel_segments=a.bevel_segments)
-    ring = add_torus("ring", RING[0], RING[1], RING[1], 128, 16)  # tube r .055: 16 segs → facets .02 units, below one device px at render scale
-    plinth = add_cylinder("plinth", PLINTH[0], PLINTH[1], -PLINTH[1] / 2, 128, bevel_width=0.03, bevel_segments=a.bevel_segments)
+    disc = add_cylinder("disc", DISC[0], DISC[1], DISC[1] / 2, a.segments, bevel_width=0.018, bevel_segments=a.bevel_segments)
+    ring = add_torus("ring", RING[0], RING[1], RING[1], a.segments, a.ring_tube_segments)  # tube r .055: 16 segs → facets .02 units, below one device px at render scale
+    plinth = add_cylinder("plinth", PLINTH[0], PLINTH[1], -PLINTH[1] / 2, a.segments, bevel_width=0.03, bevel_segments=a.bevel_segments)
     cutters = engrave_mark(disc, a.svg, DISC[0], a.mark_depth)
-    marker = add_cylinder("marker", MARKER[0], MARKER[1], 0.0, 64, bevel_width=0.008, bevel_segments=3)
+    marker = add_cylinder("marker", MARKER[0], MARKER[1], 0.0, max(64, a.segments // 4), bevel_width=0.008, bevel_segments=3)
     for ob in (disc, ring, plinth, marker):
         for poly in ob.data.polygons: poly.use_smooth = True
     objects = []
