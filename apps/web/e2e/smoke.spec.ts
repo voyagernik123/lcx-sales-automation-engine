@@ -113,7 +113,9 @@ test.describe('shell + navigation', () => {
     await goToDesk(page);
     // The status bar is the "serious terminal" frame — always present.
     await expect(page.getByText(/UTC/).first()).toBeVisible();
-    await expect(page.getByText(/NOT LEGAL ADVICE/i)).toBeVisible();
+    // The status bar's own string. A bare /NOT LEGAL ADVICE/ also matched the sidebar's rotating Field Notes tip
+    // ("Not legal advice — but pretty good business advice"), a strict-mode violation whenever that tip was showing.
+    await expect(page.getByText(/INTERNAL · NOT LEGAL ADVICE/)).toBeVisible();
   });
 
   test('lazy routes resolve to something meaningful with the API down', async ({ page }) => {

@@ -44,7 +44,11 @@ function alphasBefore(rough: number, aniso: number): { at: number; ab: number } 
  * authored value would be sharper than its author intended and nothing else would notice.
  */
 const MATERIALS = [
-  { where: 'ForgeBackdrop disc (live sign-in)', authored: 0.30, now: 0.5477, aniso: 0.86 },
+  /* Re-authored 2026-09-14: on real GPUs (Brave on Apple silicon, the in-app pane) the 0.30/0.86 disc rendered as
+     a blown white bar across the whole face — the object read as a smear, not a machined disc — and the owner said
+     so. Authored now at 0.36 perceptual, anisotropy 0.35: a brushed sheen, the highlight a soft spot. The e8 demo
+     row below keeps the original so the study stays reproducible. */
+  { where: 'ForgeBackdrop disc (live sign-in)', authored: 0.36, now: 0.6, aniso: 0.35 },
   { where: 'ForgeBackdrop ring (live sign-in)', authored: 0.13, now: 0.3606, aniso: 0.72 },
   { where: 'GlobeReliefGl HUB_MAT', authored: 0.18, now: 0.4243, aniso: 0.4 },
   { where: 'GlobeReliefGl CORRIDOR_MAT', authored: 0.22, now: 0.469, aniso: 0.85 },

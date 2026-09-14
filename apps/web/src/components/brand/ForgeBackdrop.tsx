@@ -532,8 +532,15 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
            * (sqrt(r)^2 == r) while the number finally means what the type says it means. Isotropic materials are
            * untouched: they always used rough^2, so they were never affected.
            * Pinned by `packages/gl/src/env/anisoPreserved.test.ts`.
+           *
+           * ── 2026-09-14: THE BAR WAS A SMEAR ON REAL GPUs ──────────────────────────────────────────────────────
+           * The 0.30 / 0.86 disc rendered on Brave (Apple silicon) and in the in-app pane as one blown white streak
+           * across the entire face; the owner's words were "the logo is not rendering properly". The disc mesh has no
+           * engraving — its levels are a bevel profile — so the OBJECT is the mark, and a smeared object is a broken
+           * mark. Re-authored: roughness 0.36 perceptual (0.6 here), anisotropy 0.35 — a brushed sheen with a soft
+           * highlight; the ring keeps its polished bar. Verified in the pane at 1440×900 before commit.
            */
-          material: { baseColour: gl3.hexToLinear(dark ? '#8FA3C4' : '#5E6C85'), roughness: 0.5477, metalness: 0.95, anisotropy: 0.86 } },
+          material: { baseColour: gl3.hexToLinear(dark ? '#8FA3C4' : '#5E6C85'), roughness: 0.6, metalness: 0.95, anisotropy: 0.35 } },
         { mesh: parts.ring, model: at(0, DISC_Y, 0), normalMat: NM,
           material: { baseColour: gl3.hexToLinear('#2C6BFF'), roughness: 0.3606, metalness: 0.92, anisotropy: 0.72 } },
       ];
