@@ -4,6 +4,7 @@ import { closeDb } from './db/index.js';
 import { connectionTargetBootLine } from './db/connectionTarget.js';
 import { decideTls, healDatabaseUrl } from './db/index.js';
 import { env } from './lib/env.js';
+import { startSelfPing } from './lib/selfPing.js';
 
 /*
  * SAY IT AT BOOT, BEFORE ANYTHING IS DIALLED.
@@ -66,6 +67,10 @@ const server = serve(
     console.log(`[api] LCX Sales API on http://${info.address}:${info.port} (${env.nodeEnv})`);
     console.log(`[api] health: http://127.0.0.1:${info.port}/health`);
     console.log(`[api] projects: http://127.0.0.1:${info.port}/v1/projects`);
+    startSelfPing({
+      production: env.nodeEnv === 'production',
+      publicUrl: env.apiPublicUrl || process.env.RENDER_EXTERNAL_URL,
+    });
   },
 );
 

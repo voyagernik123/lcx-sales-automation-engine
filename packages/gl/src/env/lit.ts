@@ -445,6 +445,15 @@ uniform vec3 uBaseColour;
 uniform float uRoughness;
 uniform float uMetalness;
 uniform float uAnisotropy;
+// THE INLAY: a second material below a world-space plane and inside a world-space radius. The Forge disc's engraved
+// LCX mark is 0.012 deep and read as nothing under a brushed highlight on real GPUs (2026-09-14); this paints the
+// engraving's floor and walls anodised dark, so the mark reads whatever the light does. uInlayOn = 0 for other draws.
+uniform float uInlayOn;
+uniform float uInlayBelowY;
+uniform float uInlayRadius;
+uniform vec3 uInlayColour;
+uniform float uInlayRough;
+uniform float uInlayMetal;
 
 uniform mat4 uLightVP;
 uniform sampler2D uShadowMap;
@@ -541,8 +550,12 @@ void main(){
   float NdotH = max(dot(N, H), 0.0);
   float VdotH = max(dot(V, H), 0.0);
 
-  vec3 f0 = mix(vec3(0.04), uBaseColour, uMetalness);
+  float inlay = (uInlayOn > 0.5 && vWorld.y < uInlayBelowY && length(vWorld.xz) < uInlayRadius) ? 1.0 : 0.0;
+  vec3 base = mix(uBaseColour, uInlayColour, inlay);
+  float metal = mix(uMetalness, uInlayMetal, inlay);
+  vec3 f0 = mix(vec3(0.04), base, metal);
   float rough = clamp(uRoughness, 0.045, 1.0);
+  rough = mix(rough, clamp(uInlayRough, 0.045, 1.0), inlay);
 
   vec3 T = normalize(vTangent - N * dot(N, vTangent));
   vec3 B = cross(N, T);
@@ -562,8 +575,8 @@ void main(){
 
   vec3 spec = (D * G * F) / max(1e-6, 4.0 * NdotV * NdotL + 1e-4);
 
-  vec3 kd = (1.0 - F) * (1.0 - uMetalness);
-  vec3 diffuse = kd * uBaseColour / PI;
+  vec3 kd = (1.0 - F) * (1.0 - metal);
+  vec3 diffuse = kd * base / PI;
 
   float shadow = shadowFactor(vWorld, NdotL);
   vec3 direct = (diffuse + spec) * uLightColour * NdotL * shadow;
@@ -577,6 +590,7 @@ void main(){
   // With a real environment bound, irradiance is a SOFT sample (LOD 5.5 of a 1024×512 map ≈ a 32×16 blur) and the
   // reflection sharpens with smoothness (LOD by roughness). The procedural sky ignores the LOD.
   vec3 envDiffuse = skyColourLod(N, 5.5) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);
+  envDiffuse = mix(envDiffuse, skyColourLod(N, 5.5) * base * (1.0 - specWeight) * (1.0 - metal), inlay);
   vec3 envSpecular = skyColourLod(normalize(mix(R, N, rough * rough)), rough * 6.0) * specWeight * msComp;
   float ao = uAOEnabled > 0.5 ? texture(uAO, gl_FragCoord.xy / uScreenSize).r : 1.0;
   vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain * ao;
@@ -659,6 +673,18 @@ export interface Material {
    * which is what makes turned or brushed metal show a bar of light instead of a dot.
    */
   readonly anisotropy?: number;
+  /** A second material painted below a world-space plane inside a world-space radius — an engraving's inlay. */
+  readonly inlay?: InlayMaterial;
+}
+
+export interface InlayMaterial {
+  /** World y below which the inlay applies (the engraved face's top, minus a hair). */
+  readonly belowY: number;
+  /** World radius in xz from the origin within which it applies (keeps a bevelled rim out). */
+  readonly withinRadius: number;
+  readonly colour: readonly [number, number, number];
+  readonly roughness: number;
+  readonly metalness: number;
 }
 
 export interface LitDraw {
@@ -869,6 +895,13 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
         gl.uniform1f(u(litProg, 'uRoughness'), d.material.roughness);
         gl.uniform1f(u(litProg, 'uMetalness'), d.material.metalness);
         gl.uniform1f(u(litProg, 'uAnisotropy'), d.material.anisotropy ?? 0);
+        const inl = d.material.inlay;
+        gl.uniform1f(u(litProg, 'uInlayOn'), inl ? 1 : 0);
+        gl.uniform1f(u(litProg, 'uInlayBelowY'), inl?.belowY ?? -1e9);
+        gl.uniform1f(u(litProg, 'uInlayRadius'), inl?.withinRadius ?? 0);
+        gl.uniform3f(u(litProg, 'uInlayColour'), inl?.colour[0] ?? 0, inl?.colour[1] ?? 0, inl?.colour[2] ?? 0);
+        gl.uniform1f(u(litProg, 'uInlayRough'), inl?.roughness ?? 1);
+        gl.uniform1f(u(litProg, 'uInlayMetal'), inl?.metalness ?? 0);
         gl.bindVertexArray(d.mesh.vao); step('lit bindVAO');
         gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0); step('lit drawElements');
       }

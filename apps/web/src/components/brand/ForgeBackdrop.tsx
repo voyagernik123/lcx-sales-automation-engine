@@ -140,6 +140,19 @@ const PEAK_NDOTL = ((): number => {
 /** The key's warm tint. ONE gain, three channels — `lightColour` and the solve share it or drift. */
 const KEY_TINT = [1, 0.96, 0.885] as const;
 
+/** The disc's centre height and its top face in world units (forge.glb's disc spans y ∈ [-0.08, 0.08] about its node). */
+export const FORGE_DISC_Y = 0.30;
+export const FORGE_DISC_TOP_Y = FORGE_DISC_Y + 0.08;
+/**
+ * THE ENGRAVED MARK, PAINTED. forge.glb's disc carries the LCX mark as a 0.012-deep boolean engraving (export_gltf.py,
+ * `--mark-depth 0.012`); on real GPUs it read as nothing under the brushed highlight — the owner's "the logo is not
+ * rendering properly", 2026-09-14. The inlay paints everything below the top face inside the mark's radius anodised
+ * dark: the engraving's floor and walls. 0.75 is chosen from the asset — the mark's floor reaches r ≈ 0.57 and the
+ * bevelled rim begins at r ≈ 0.90 — and `forgeInlay.test.ts` re-derives both from the GLB so a re-export cannot move
+ * either past it unnoticed.
+ */
+export const FORGE_DISC_INLAY = { belowY: FORGE_DISC_TOP_Y - 0.002, withinRadius: 0.75 } as const;
+
 /**
  * THE TWO RIGS, AND THE ONE AXIS THAT WAS MISSING FROM BOTH.
  *
@@ -500,7 +513,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const m = gl3.IDENTITY(); m[12] = x; m[13] = y; m[14] = z; return m;
       };
       const NM = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
-      const DISC_Y = 0.30;
+      const DISC_Y = FORGE_DISC_Y;
       /* Rebuilt per frame from the live theme. Four small objects; the GEOMETRY is uploaded once
          and shared, so this costs nothing measurable and cannot go stale. */
       const buildDraws = (dark: boolean) => [
@@ -540,7 +553,8 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
            * mark. Re-authored: roughness 0.36 perceptual (0.6 here), anisotropy 0.35 — a brushed sheen with a soft
            * highlight; the ring keeps its polished bar. Verified in the pane at 1440×900 before commit.
            */
-          material: { baseColour: gl3.hexToLinear(dark ? '#8FA3C4' : '#5E6C85'), roughness: 0.6, metalness: 0.95, anisotropy: 0.35 } },
+          material: { baseColour: gl3.hexToLinear(dark ? '#8FA3C4' : '#5E6C85'), roughness: 0.6, metalness: 0.95, anisotropy: 0.35,
+            inlay: { ...FORGE_DISC_INLAY, colour: gl3.hexToLinear(dark ? '#0F1626' : '#1B2233'), roughness: 0.55, metalness: 0.35 } } },
         { mesh: parts.ring, model: at(0, DISC_Y, 0), normalMat: NM,
           material: { baseColour: gl3.hexToLinear('#2C6BFF'), roughness: 0.3606, metalness: 0.92, anisotropy: 0.72 } },
       ];
