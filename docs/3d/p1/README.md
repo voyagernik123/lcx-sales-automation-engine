@@ -80,10 +80,10 @@ JSON with `--json`.
 | L1 renderer | ≤ 45 KB raw | **12.9 KB** | ✓ |
 | L2 look | ≤ 10 KB raw | **6.9 KB** | ✓ |
 | L3 motion | ≤ 8 KB raw | **1.7 KB** | ✓ |
-| L4 env | ≤ 60 KB raw | **40.9 KB** | ✓ |
+| L4 env | ≤ 60 KB raw | **42.0 KB** | ✓ |
 | L3.5 particles | ≤ 11 KB raw | **10.9 KB** | ✓ |
 | L4.5 field | ≤ 13 KB raw | **9.0 KB** | ✓ |
-| **spine total** (all six lanes) | ≤ 147 KB raw | **82.3 KB** | 64.7 KB of the allocation unspent |
+| **spine total** (all six lanes) | ≤ 147 KB raw | **83.4 KB** | 63.6 KB of the allocation unspent |
 | gate bundle — spine + this surface, tree-shaken | — | **24.0 KB** (24575 B) | what this lane actually ships |
 | three.js, same job, same settings (P0) | — | 513.3 KB | **6.2× the spine** |
 <!-- gl-budget:end lanes -->
