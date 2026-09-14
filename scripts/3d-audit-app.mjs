@@ -1615,6 +1615,7 @@ async function openPage(browser, opts = {}) {
     ...opts,
   });
   await page.addInitScript(FREEZE_ENV, { at: FROZEN_AT, seed: FROZEN_SEED });
+  await page.addInitScript(() => { window.__LCX_GL_SOFTWARE_OK = true; }); // headless IS SwiftShader; since 2026-09-14 the Stage refuses a software rasteriser unless a harness says it wants it
   return page;
 }
 

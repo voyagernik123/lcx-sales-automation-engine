@@ -3,7 +3,7 @@ import { FORGE_GLB_URL } from '../brand/forgeObjects';
 import type { Target3D } from '@lcx/gl/env/target3d.js';
 import type { MeshBuffer } from '@lcx/gl/env/lit.js';
 import type { PointCloud } from '@lcx/gl/primitives/points.js';
-import { resolveQualityTier } from '../shared/useQualityTier';
+import { isKnownSoftwareRasteriser, resolveQualityTier } from '../shared/useQualityTier';
 import { useArrivalStore } from '@/lib/useArrival';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { workspaceForPath } from '@lcx/shared';
@@ -26,8 +26,8 @@ import { useLocation } from 'react-router-dom';
  *
  * WHAT IT NEVER DOES. It never draws data (the glows are the watch's counts, bounded, never randomised); it never
  * animates at rest; it never lowers a text floor — the stage's luminance is bounded (`STAGE_LUMINANCE_MAX`) and
- * `glass.test.ts` proves every certified role still clears 4.5:1 through the glass. On refusal (no WebGL2, a lost
- * context, the measurement switch) the DOM's own `bg-page` is what the operator sees — readable, and honest about it
+ * `glass.test.ts` proves every certified role still clears 4.5:1 through the glass. On refusal (no WebGL2, a software
+ * rasteriser, a lost context, the measurement switch) the DOM's own `bg-page` is what the operator sees — readable, and honest about it
  * through `data-stage="refused:<code>"`.
  *
  * LAZY for the same measured reason the Forge is: the engine's runtime imports are dynamic, so the shell chunk
@@ -129,6 +129,15 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       const dpr = Math.min(Q.dprScale, Math.max(1, globalThis.devicePixelRatio || 1));
       const outcome = g.createStage(canvas, { alpha: false });
       if (!g.isStage(outcome)) { setState(`refused:${outcome.code}`); return; }
+      /* A SOFTWARE RASTERISER GETS THE PLATE, NOT THE ROOM (2026-09-14). Measured on SwiftShader — every headless browser,
+         every CI runner, every VDI without a GPU driver: the setup below (ten programs, a first frame the compositor waits
+         for) held the desk's main thread 1.3 s on an M1 and 4–8 s on a 2-vCPU runner, and the route's OWN content — the
+         rows, the `f` layer — waited behind scenery. Refused HERE, before a single shader compiles, and the context handed
+         straight back; the DOM's `bg-page` is what the operator sees and `data-stage` says why. The canvas is hidden as well
+         as disposed: `alpha:false` composites an undrawn buffer as opaque black. `isKnownSoftwareRasteriser` refuses only
+         on a renderer string that NAMES a CPU rasteriser, so a browser that hides the string keeps the room; the instrument
+         harnesses set `__LCX_GL_SOFTWARE_OK` to keep capturing under headless. On ANGLE Metal the same setup is ~0.1 s. */
+      if (isKnownSoftwareRasteriser(outcome.gl)) { canvas.style.display = 'none'; outcome.dispose(); setState('refused:SOFTWARE_RASTERISER'); return; }
       /* P8 · CONTEXT LOSS. The browser may take the GPU away (memory pressure, a driver reset, a laptop lid). Without this the
          canvas holds whatever the compositor last had and nothing says why. Say so on the host (`refused:CONTEXT_LOST` — the DOM
          plate and every text floor still stand), and when the context comes back rebuild ONCE from the same module kit. */

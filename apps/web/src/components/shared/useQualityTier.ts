@@ -135,11 +135,54 @@ export function isSoftwareRasteriser(gl: WebGL2RenderingContext): boolean {
     if (!dbg) return true;
     const name = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) ?? '');
     if (name.length === 0) return true;
-    return /swiftshader|llvmpipe|software/i.test(name);
+    return SOFTWARE_RENDERER.test(name);
   } catch {
     /* A context that throws on an extension query cannot be characterised, and an uncharacterisable
        machine keeps the frame it ships with. */
     return true;
+  }
+}
+
+/**
+ * The renderer strings that POSITIVELY name a CPU rasteriser. ONE pattern for both predicates, so the measurement
+ * side and the refusal side can never disagree about what "software" is — an untested twin drifts. SwiftShader
+ * (Chrome's fallback, and every headless Playwright run), llvmpipe (Mesa's — Linux VMs and CI), the generic
+ * "Software Rasterizer", and Microsoft's Basic Render Driver (WARP — the D3D fallback a Windows VDI or a machine
+ * with no GPU driver lands on).
+ */
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|software|basic render driver/i;
+
+/**
+ * Is this context POSITIVELY a software rasteriser — the question the desk's backdrop asks before it compiles a
+ * single shader.
+ *
+ * MEASURED 2026-09-14, and the reason this exists. On SwiftShader the Stage's synchronous setup — ten programs
+ * and a first frame the compositor waits for — held the desk's main thread for 1.3 s on an M1: the route's rows
+ * and the `f` hint layer both waited behind scenery. On a 2-vCPU CI runner it held it 4–8 s, which is where
+ * `tablestops.spec` and `hints.spec` went red at their 6 s expects. With the Stage refused, the same rows arrived
+ * in 0.39 s and the hint chips in 0.13 s. On real hardware (ANGLE Metal, M1) the same setup costs about 0.1 s,
+ * which is why the room stays there.
+ *
+ * THE ASYMMETRY RUNS THE OPPOSITE WAY TO `isSoftwareRasteriser`, ON PURPOSE. That predicate protects a
+ * MEASUREMENT and treats "unknown" as software so a meaningless number can never downgrade the product. This one
+ * decides whether to REFUSE a layer, so "unknown" must mean hardware: a privacy configuration that hides the
+ * renderer string keeps the room it ships with. Only a string that names a CPU rasteriser refuses.
+ *
+ * `window.__LCX_GL_SOFTWARE_OK === true` answers false regardless. The instrument harnesses — `scripts/
+ * instrument-audit.mjs`, `measure-stage-luminance.mjs`, `measure-frame-budget.mjs`, `3d-audit-app.mjs` — run
+ * headless, which IS SwiftShader, and exist to capture the GL layers; they set it from an init script. Nothing in
+ * the app does, and only the exact boolean counts.
+ */
+export function isKnownSoftwareRasteriser(gl: WebGL2RenderingContext): boolean {
+  if ((globalThis as { __LCX_GL_SOFTWARE_OK?: unknown }).__LCX_GL_SOFTWARE_OK === true) return false;
+  try {
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    if (!dbg) return false;
+    const name = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) ?? '');
+    return SOFTWARE_RENDERER.test(name);
+  } catch {
+    /* Uncharacterisable is not software: the refusal needs a name. */
+    return false;
   }
 }
 

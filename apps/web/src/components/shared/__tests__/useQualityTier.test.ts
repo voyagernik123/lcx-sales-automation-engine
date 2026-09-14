@@ -18,7 +18,7 @@ import path from 'node:path';
 import { pickQualityTier, shadowMapSizeFor, QUALITY_TIERS, qualitySettings } from '@lcx/gl';
 import {
   resolveQualityTier, qualityTierReport, needsQualityProbe, recordQualityProbe,
-  measureFrameMs, isSoftwareRasteriser, probeSync, __resetQualityTierForTests,
+  measureFrameMs, isSoftwareRasteriser, isKnownSoftwareRasteriser, probeSync, __resetQualityTierForTests,
 } from '../useQualityTier';
 
 /**
@@ -400,5 +400,51 @@ describe('every shipping component derives its tier rather than hard-coding the 
     /* The light march IS a look knob — it feeds `lightTransmittance`, which modulates radiance and never
        touches alpha, and alpha is the channel this reading assigns to magnitude. */
     expect(src).toMatch(/lightSteps:\s*Math\.min\(6,\s*Q\.volumeLightSteps\)/);
+  });
+});
+
+describe('the refusal-side predicate: only a string that NAMES a CPU rasteriser refuses', () => {
+  /* The string Chrome's headless build actually reports — every Playwright run, every CI runner. */
+  const SWIFTSHADER = 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)';
+  const flag = globalThis as { __LCX_GL_SOFTWARE_OK?: unknown };
+
+  it('names the software rasterisers this repo lands on, in the strings their drivers report — and the measurement side agrees', () => {
+    for (const name of [
+      SWIFTSHADER, 'Google SwiftShader', 'Mesa/X.org, llvmpipe (LLVM 15.0.7, 256 bits)', 'Software Rasterizer',
+      /* WARP: the D3D11 fallback a Windows VDI or a machine with no GPU driver lands on. */
+      'ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    ]) {
+      expect(isKnownSoftwareRasteriser(fakeGl({ renderer: name }).gl), name).toBe(true);
+      expect(isSoftwareRasteriser(fakeGl({ renderer: name }).gl), `${name}: one shared pattern, so the two cannot drift`).toBe(true);
+    }
+  });
+
+  it('keeps the room on hardware, and on a hidden or empty string — "unknown" is HARDWARE on this side', () => {
+    for (const name of ['ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)', 'NVIDIA GeForce RTX 4070/PCIe/SSE2', null, '']) {
+      expect(isKnownSoftwareRasteriser(fakeGl({ renderer: name }).gl), String(name)).toBe(false);
+    }
+    /* The two predicates disagree on "unknown" ON PURPOSE: a hidden GPU name must neither downgrade a
+       measurement's tier nor take the room away. Asserted side by side so a "consistency" refactor cannot
+       quietly pick one direction for both. */
+    expect(isSoftwareRasteriser(fakeGl({ renderer: null }).gl)).toBe(true);
+    expect(isKnownSoftwareRasteriser(fakeGl({ renderer: null }).gl)).toBe(false);
+  });
+
+  it('a context that throws on the extension query is not characterised as software', () => {
+    const gl = { getExtension: () => { throw new Error('context lost'); } } as unknown as WebGL2RenderingContext;
+    expect(isKnownSoftwareRasteriser(gl)).toBe(false);
+    expect(isSoftwareRasteriser(gl), 'and the measurement side still refuses to measure it').toBe(true);
+  });
+
+  it('the instrument override keeps the room under SwiftShader — and only the exact boolean counts', () => {
+    try {
+      flag.__LCX_GL_SOFTWARE_OK = 'yes';
+      expect(isKnownSoftwareRasteriser(fakeGl({ renderer: SWIFTSHADER }).gl), 'a truthy string is not the switch').toBe(true);
+      flag.__LCX_GL_SOFTWARE_OK = true;
+      expect(isKnownSoftwareRasteriser(fakeGl({ renderer: SWIFTSHADER }).gl)).toBe(false);
+      expect(isSoftwareRasteriser(fakeGl({ renderer: SWIFTSHADER }).gl), 'the override is about REFUSING, never about MEASURING').toBe(true);
+    } finally {
+      delete flag.__LCX_GL_SOFTWARE_OK;
+    }
   });
 });

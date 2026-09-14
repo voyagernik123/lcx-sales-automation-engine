@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { takeSeat } from './seat';
+import { goToDesk } from './seat';
 
 /**
  * The three tables that were NOT one tab stop (T1 #11), in a real browser.
@@ -29,8 +29,10 @@ const SURFACES = [
 ];
 
 async function open(page: Page, path: string): Promise<void> {
-  await takeSeat(page);
-  await page.goto(path);
+  // The shell first — `goToDesk` anchors on the status bar rather than on `goto`'s load event (seat.ts says why) —
+  // and only then the table. `takeSeat` + `goto` + a 6 s expect was this suite's red on CI: the expect started
+  // before React had mounted, and spent its budget on the shell.
+  await goToDesk(page, path);
   await expect(page.locator('[data-list-row]').first()).toBeVisible();
 }
 

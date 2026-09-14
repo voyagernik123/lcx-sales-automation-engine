@@ -484,6 +484,7 @@ async function captureRoute(browser, route, theme, glOff = false) {
     if ((RELIEFS_OFF || glOff) && route.seated) await page.addInitScript(reliefsOffInit, SEAT);
     if (glOff) await page.addInitScript(glOffInit);
     await page.addInitScript(themeSeed, { dark: theme === 'dark', scope: route.seated ? SEAT.email : 'anon' });
+    await page.addInitScript(() => { window.__LCX_GL_SOFTWARE_OK = true; }); // headless IS SwiftShader; since 2026-09-14 the Stage refuses a software rasteriser unless a harness says it wants it
     await page.addInitScript(PROBE);
     await page.route('**/v1/**', (r) => r.abort('connectionrefused'));
     // THE HEALTH FIXTURE (P3): infrastructure state, not content. `OfflineBanner` renders a top strip until a health probe

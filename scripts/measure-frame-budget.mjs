@@ -17,6 +17,7 @@ const seed = () => {
 const browser = await chromium.launch({ headless: !headed, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 2 });
 await page.addInitScript(seed);
+await page.addInitScript(() => { window.__LCX_GL_SOFTWARE_OK = true; }); // headless IS SwiftShader; since 2026-09-14 the Stage refuses a software rasteriser unless a harness says it wants it
 await page.route('**/v1/**', (r) => r.abort('connectionrefused'));
 await page.route('**/v1/health*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, service: 'lcx-sales-api', version: 'harness', db: 'up', timestamp: new Date().toISOString() }) }));
 await page.route('**/v1/watch*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(watchFixture(new Date().toISOString(), '')) }));
