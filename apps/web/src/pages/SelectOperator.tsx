@@ -6,6 +6,7 @@ import { OPERATORS, useOperatorStore } from '@/stores';
 import { apiConfig, getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
 import { useClock } from '@/lib/useClock';
 import { classifyUnreachable, originBlockedMessage, type Reachability } from '@/lib/reachability';
+import { waitForApi } from '@/lib/coldStart';
 import { LcxMark } from '@/components/brand/LcxMark';
 import { ForgePlate } from '@/components/brand/ForgePlate';
 
@@ -36,6 +37,13 @@ export function SelectOperator() {
   const clock = new Date(useClock(1000));
   const [apiUp, setApiUp] = useState<boolean | null>(null);
   /**
+   * Seconds spent waiting for a cold start. Render's free tier sleeps after fifteen idle minutes and
+   * wakes in 30–60 s; the first visitor after a quiet spell used to read API DOWN for that minute
+   * (production, 2026-09-14 08:30 UTC — /health answered 200 with uptimeSeconds 134 shortly after).
+   * Non-null while the probe loop in lib/coldStart is still inside its budget.
+   */
+  const [waking, setWaking] = useState<number | null>(null);
+  /**
    * WHY a failed health check is not enough to say "API DOWN". A CORS denial and
    * a dead host are the same opaque TypeError in the browser, so this screen used
    * to show a red API DOWN while the API was answering 200 — see lib/reachability.
@@ -48,24 +56,30 @@ export function SelectOperator() {
   }, []);
 
   useEffect(() => {
-    let live = true;
-    getHealth()
-      .then(() => {
-        if (!live) return;
-        setApiUp(true);
-        setReach(null);
-      })
-      .catch(async () => {
-        if (!live) return;
-        setApiUp(false);
-        // Second, no-cors probe: distinguishes "nothing answered" from "something
-        // answered and the browser was not allowed to read it".
-        const r = await classifyUnreachable(`${apiConfig.base}/health`);
-        if (live) setReach(r);
-      });
-    return () => {
-      live = false;
-    };
+    const ctl = new AbortController();
+    void waitForApi(
+      (signal) => getHealth(signal),
+      (phase, elapsedMs) => {
+        if (ctl.signal.aborted) return;
+        if (phase === 'up') {
+          setApiUp(true);
+          setReach(null);
+          setWaking(null);
+        } else if (phase === 'waking') {
+          setWaking(Math.round(elapsedMs / 1000));
+        } else {
+          setApiUp(false);
+          setWaking(null);
+          // Second, no-cors probe: distinguishes "nothing answered" from "something
+          // answered and the browser was not allowed to read it".
+          void classifyUnreachable(`${apiConfig.base}/health`).then((r) => {
+            if (!ctl.signal.aborted) setReach(r);
+          });
+        }
+      },
+      { signal: ctl.signal },
+    );
+    return () => ctl.abort();
   }, []);
 
   const submit = async () => {
@@ -243,7 +257,9 @@ export function SelectOperator() {
             <span
               className={`h-1.5 w-1.5 rounded-full ${
                 apiUp === null
-                  ? 'bg-grey/40'
+                  ? waking === null
+                    ? 'bg-grey/40'
+                    : 'bg-amber-500'
                   : apiUp
                     ? 'bg-emerald-500'
                     : reach === 'origin-blocked'
@@ -252,7 +268,9 @@ export function SelectOperator() {
               }`}
             />
             {apiUp === null
-              ? 'CONNECTING'
+              ? waking === null
+                ? 'CONNECTING'
+                : `API WAKING · ${waking}S`
               : apiUp
                 ? 'SECURE'
                 : reach === 'origin-blocked'
